@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
-from odoo import models, fields, api, SUPERUSER_ID
 import logging
+
+import requests
+from markupsafe import Markup, escape
+
+from odoo import api, fields, models, SUPERUSER_ID, _
+from odoo.exceptions import UserError
 
 try:
     from odoo.addons.queue_job.job import job
@@ -9,6 +14,7 @@ except ImportError:
         def decorator(f):
             return f
         return decorator
+
 
 _logger = logging.getLogger(__name__)
 
@@ -66,6 +72,12 @@ class MLWebhookNotification(models.Model):
         index=True,
         default=lambda self: self.env.company,
     )
+    retry_count = fields.Integer(
+        string='Reintentos fallidos',
+        default=0,
+        readonly=True,
+        help='Solo cuenta errores de procesamiento en Odoo; no incluye timeouts, 429 ni errores 5xx de ML.',
+    )
 
     @api.model
     def create_notification(self, order_id, topic, resource=None, user_id=None, raw_data=None, ml_account_id=None):
@@ -112,16 +124,97 @@ class MLWebhookNotification(models.Model):
         ctx["allowed_company_ids"] = [co_id]
         ctx["force_company"] = co_id
 
-        if hasattr(env, "with_company"):
-            e = env.with_company(company)
-            if hasattr(e, "sudo"):
-                return e.sudo()
-            return api.Environment(env.cr, SUPERUSER_ID, ctx)
+        return env.with_company(company).sudo()
 
-        if hasattr(env, "sudo"):
-            return env.sudo().with_context(ctx)
+    @staticmethod
+    def _is_transient_meli_request_error(exc):
+        """Errores que debe reintentar queue_job sin consumir retry_count."""
+        if isinstance(exc, requests.exceptions.Timeout):
+            return True
+        if isinstance(exc, requests.exceptions.HTTPError):
+            resp = getattr(exc, 'response', None)
+            if resp is not None:
+                code = resp.status_code
+                if code == 429:
+                    return True
+                if 500 <= code <= 599:
+                    return True
+        return False
 
-        return api.Environment(env.cr, SUPERUSER_ID, ctx)
+    def _notify_failure_to_responsible(self, error_message):
+        """Actividad de aviso en ml.account (sin email). Evita duplicados por orden."""
+        self.ensure_one()
+        account = self.ml_account_id
+        if not account or not account.exists():
+            return
+        activity_type = self.env.ref('mail.mail_activity_data_warning', raise_if_not_found=False)
+        if not activity_type:
+            _logger.warning('%s mail.mail_activity_data_warning no disponible', _LOG_JOB)
+            return
+        assignee = account.create_uid
+        if not assignee:
+            assignee = self.env.user
+
+        summary = _('Venta #%s no se pudo importar') % self.order_id
+        Activity = self.env['mail.activity'].sudo()
+        duplicate = Activity.search([
+            ('res_model', '=', 'ml.account'),
+            ('res_id', '=', account.id),
+            ('activity_type_id', '=', activity_type.id),
+            ('summary', '=', summary),
+        ], limit=1)
+        if duplicate:
+            return
+
+        base = self.env['ir.config_parameter'].sudo().get_param('web.base.url', '').rstrip('/')
+        link = f"{base}/web#id={self.id}&model=ml.webhook.notification&view_type=form"
+        note_lines = [
+            _('Error: %s') % (error_message or ''),
+            _('Topic: %s') % (self.topic or ''),
+            _('Resource: %s') % (self.resource or ''),
+            _('Notificación: %s') % link,
+        ]
+        body = '\n'.join(note_lines)
+        note_html = Markup('<p style="white-space:pre-wrap;">{}</p>').format(escape(body))
+
+        Activity.create({
+            'activity_type_id': activity_type.id,
+            'summary': summary,
+            'note': note_html,
+            'res_model': 'ml.account',
+            'res_id': account.id,
+            'user_id': assignee.id,
+            'date_deadline': fields.Date.context_today(self),
+            'company_id': self.company_id.id,
+        })
+        _logger.info(
+            '%s actividad de fallo webhook creada para user_id=%s ml.account=%s order_id=%s',
+            _LOG_JOB,
+            assignee.id,
+            account.id,
+            self.order_id,
+        )
+
+    def _mark_failed_processing(self, error_message):
+        """Incrementa retry_count, marca failed y notifica al 3.er fallo de procesamiento."""
+        self.ensure_one()
+        new_retry = (self.retry_count or 0) + 1
+        if new_retry >= 3:
+            self._notify_failure_to_responsible(error_message)
+        self.write({
+            'status': 'failed',
+            'retry_count': new_retry,
+        })
+
+    def action_retry_webhook_notification(self):
+        """Vuelve a pendiente y encola procesamiento (solo desde estado fallida)."""
+        failed = self.filtered(lambda n: n.status == 'failed')
+        other = self - failed
+        if other:
+            raise UserError(_('Solo se pueden reintentar notificaciones en estado Fallida.'))
+        failed.write({'status': 'pending'})
+        failed.enqueue_process()
+        return True
 
     @api.model
     def mark_as_processed_for_order(self, order_id, company_id):
@@ -232,6 +325,14 @@ class MLWebhookNotification(models.Model):
                 self.order_id,
                 ex,
             )
+            if self._is_transient_meli_request_error(ex):
+                _logger.warning(
+                    '%s error transitorio (timeout/429/5xx), reintento queue_job sin incrementar retry_count: %s',
+                    _LOG_JOB,
+                    ex,
+                )
+                raise
+            self._mark_failed_processing(str(ex))
             return
 
         if result:
@@ -247,9 +348,14 @@ class MLWebhookNotification(models.Model):
                 self.order_id,
             )
         else:
+            msg = (
+                'update_or_create_from_meli devolvió None (token inválido, orden de otro vendedor, '
+                'o error API; ver logs ml.sale)'
+            )
             _logger.warning(
-                "%s causa=api o config update_or_create_from_meli devolvió None order_id=%s "
-                "(token inválido, orden de otro vendedor, o error API; ver logs ml.sale)",
+                "%s causa=api o config %s order_id=%s",
                 _LOG_JOB,
+                msg,
                 self.order_id,
             )
+            self._mark_failed_processing(msg)

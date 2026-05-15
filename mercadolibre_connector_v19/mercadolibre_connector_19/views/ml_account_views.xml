@@ -62,13 +62,23 @@
                 </header>
 
                 <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_sync_log_errors"
+                                type="object"
+                                class="oe_stat_button"
+                                icon="fa-exclamation-triangle"
+                                groups="base.group_user"
+                                invisible="sync_log_error_recent_count == 0">
+                            <field name="sync_log_error_recent_count" widget="statinfo"
+                                   string="Errores sync (30 días)"/>
+                        </button>
+                    </div>
                     <group>
                         <group>
                             <field name="name"/>
                             <field name="client_id"/>
-                            <field name="client_secret" password="True"/>
+                            <field name="client_secret" password="True" groups="mercadolibre_connector.group_ml_admin"/>
                             <field name="redirect_uri"/>
-                            <field name="country"/>
                         </group>
                         <group string="Configuración del stock">
                             <field name="warehouse_id"
@@ -76,6 +86,10 @@
                                    placeholder="Seleccioná el almacén que sincroniza con Mercado Libre"/>
                             <field name="stock_type"/>
                             <field name="auto_sync_stock_on_odoo_change"/>
+                            <field name="sync_price_pricelist_id"
+                                   options="{'no_create_edit': True}"
+                                   placeholder="Lista de precios para enviar precios a ML"/>
+                            <field name="auto_sync_price_on_odoo_change"/>
                             <field name="auto_pause_when_max_stock"/>
                             <field name="max_stock_to_pause"
                                    invisible="not auto_pause_when_max_stock"
@@ -102,6 +116,9 @@
                             <field name="fallback_product_id"
                                    options="{'no_create': False}"
                                    placeholder="Seleccioná producto fallback para errores SKU"/>
+                            <field name="default_order_partner_id"
+                                   options="{'no_create': False}"
+                                   placeholder="Seleccioná contacto por defecto para órdenes sin cliente"/>
                             <field name="payment_journal_id"
                                    options="{'no_create': False}"
                                    placeholder="Seleccioná el diario para pagos automáticos"
@@ -111,14 +128,15 @@
                             <field name="process_webhook_sales"/>
                             <field name="polling_hours_back" placeholder="24"/>
                         </group>
-                        <group string="Configuración de Fechas">
+                        <group string="País y zona horaria (Mercado Libre)">
+                            <field name="country_id" options="{'no_create': True}"/>
                             <field name="timezone"/>
                         </group>
                     </group>
 
                     <group string="Tokens de acceso">
-                        <field name="access_token" readonly="1"/>
-                        <field name="refresh_token" readonly="1"/>
+                        <field name="access_token" readonly="1" groups="mercadolibre_connector.group_ml_admin"/>
+                        <field name="refresh_token" readonly="1" groups="mercadolibre_connector.group_ml_admin"/>
                         <field name="token_expiration" readonly="1"/>
                         <field name="is_connected" readonly="1"/>
                     </group>
@@ -134,7 +152,7 @@
         <field name="arch" type="xml">
             <list string="Cuentas Mercado Libre">
                 <field name="name"/>
-                <field name="country"/>
+                <field name="country_id"/>
                 <field name="warehouse_id"/>
                 <field name="is_connected"/>
                 <field name="token_expiration"/>

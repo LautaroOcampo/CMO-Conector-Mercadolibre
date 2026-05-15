@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from . import ml_account
+from . import ml_sync_log
 from . import product_template
 from . import ml_attribute_validator
 from . import ml_payload_builder
@@ -14,4 +15,6 @@ from . import ml_sale_line
 from . import ml_webhook_notification
 from . import res_partner
 from . import stock_quant
+from . import stock_move
 from . import sale_order
+from . import ml_product_price_sync

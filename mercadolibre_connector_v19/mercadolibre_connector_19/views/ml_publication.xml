@@ -4,9 +4,9 @@
         <field name="name">ml.publication.variant.image.list</field>
         <field name="model">ml.publication.image</field>
         <field name="arch" type="xml">
-            <list string="Imágenes de la Variante" editable="bottom" default_order="sequence,id">
-                <field name="sequence" widget="handle"/>
-                <field name="image_1920" widget="image" options="{'size': [64, 64]}"/>
+            <list string="Imágenes de la Variante" create="0" delete="0" edit="0" default_order="sequence,id">
+                <field name="sequence" widget="handle" readonly="1"/>
+                <field name="image_1920" widget="image" readonly="1" options="{'size': [64, 64]}"/>
                 <field name="ml_picture_id" readonly="1" optional="hide"/>
                 <field name="publication_id" invisible="1"/>
                 <field name="variant_id" invisible="1"/>
@@ -28,37 +28,30 @@
                             class="oe_highlight"/>
                     <button name="action_match_product_by_sku" 
                             type="object" 
-                            string="Matchear Producto por SKU"
+                            string="Relaciona por SKU"
                             icon="fa-link"
-                            class="btn-secondary"
-                            invisible="product_tmpl_id"/>
-                    <button name="action_update_price_from_product" 
-                            type="object" 
-                            string="💰 Actualizar Precio"
-                            icon="fa-money"
+                            class="btn-secondary"/>
+                    <button name="action_open_ml_values_wizard"
+                            type="object"
+                            string="Actualizar valores"
+                            icon="fa-refresh"
                             class="btn-primary"
-                            invisible="not product_tmpl_id"
-                            help="Actualiza solo el precio desde el producto relacionado y lo sincroniza con MercadoLibre"/>
-                    <button name="action_update_stock_from_product" 
-                            type="object" 
-                            string="📦 Actualizar Stock"
-                            icon="fa-cubes"
-                            class="btn-primary"
-                            invisible="not product_tmpl_id"
-                            help="Actualiza solo el stock desde el producto relacionado y lo sincroniza con MercadoLibre"/>
+                            invisible="not ml_item_id"
+                            help="Abre un asistente para enviar título, precio, stock y SKU a MercadoLibre"/>
                 </header>
                 <sheet>
                     <group>
                         <group>
                             <field name="name" string="Nombre"/>
-                            <field name="title" string="Título en ML"/>
+                            <field name="title" string="Título en ML" readonly="1"/>
                             <field name="product_tmpl_id" string="Producto Relacionado"/>
                             <field name="has_product_variants" invisible="1"/>
                             <field name="product_variant_id" string="Variante relacionada" 
                                    invisible="not has_product_variants"
+                                   readonly="1"
                                    options="{'no_create': True}"
                                    help="Si el producto tiene variantes, indique qué variante corresponde a esta publicación."/>
-                            <field name="ml_account_id" string="Cuenta ML"/>
+                            <field name="ml_account_id" string="Cuenta ML" readonly="1"/>
                             <field name="ml_item_id" string="ID Item ML" readonly="1"/>
                             <field name="ml_variation_id" string="ID variación ML" readonly="1" optional="hide" 
                                    invisible="not ml_variation_id"
@@ -66,16 +59,12 @@
                         </group>
                         <group>
                             <group string="Precio y Stock Actuales en ML" col="2">
-                                <field name="current_price_ml" string="Precio Actual" widget="monetary" options="{'currency_field': 'currency_id'}"/>
-                                <field name="current_stock_ml" string="Stock Actual"/>
-                            </group>
-                            <group string="Precio y Stock al Actualizar" col="2">
-                                <field name="new_price_ml" string="Precio al Actualizar" widget="monetary" options="{'currency_field': 'currency_id'}"/>
-                                <field name="new_stock_ml" string="Stock al Actualizar"/>
+                                <field name="current_price_ml" string="Precio Actual" readonly="1" widget="monetary" options="{'currency_field': 'currency_id'}"/>
+                                <field name="current_stock_ml" string="Stock Actual" readonly="1"/>
                             </group>
                             <group string="Información Adicional" col="2">
-                                <field name="seller_sku" string="SKU" invisible="has_variants"/>
-                                <field name="ml_listing_type" string="Tipo de Publicación"/>
+                                <field name="seller_sku" string="SKU" readonly="1" invisible="has_variants"/>
+                                <field name="ml_listing_type" string="Tipo de Publicación" readonly="1"/>
                                 <field name="ml_status" string="Estado en ML" readonly="1"/>
                                 <field name="state" string="Estado" readonly="1"/>
                             </group>
@@ -93,20 +82,21 @@
                                 <field name="category_id" string="ID Categoría ML" readonly="1"/>
                             </group>
                         <group>
-                            <field name="local_pickup" string="Ofrece Retiro en Persona"/>
-                            <field name="free_shipping" string="Envío Gratis"/>
-                            <field name="has_universal_code" string="Tiene Código Universal"/>
-                            <field name="universal_code" string="Código Universal" invisible="not has_universal_code"/>
-                            <field name="warranty_type" string="Tipo de Garantía"/>
+                            <field name="local_pickup" string="Ofrece Retiro en Persona" readonly="1"/>
+                            <field name="free_shipping" string="Envío Gratis" readonly="1"/>
+                            <field name="has_universal_code" string="Tiene Código Universal" readonly="1"/>
+                            <field name="universal_code" string="Código Universal" invisible="not has_universal_code" readonly="1"/>
+                            <field name="warranty_type" string="Tipo de Garantía" readonly="1"/>
                             <field name="warranty_days" string="Días de Garantía"
                                    invisible="warranty_type == 'none'"
+                                   readonly="1"
                                    placeholder="Días de garantía"/>
-                            <field name="availability_time" string="Tiempo de Disponibilidad"/>
+                            <field name="availability_time" string="Tiempo de Disponibilidad" readonly="1"/>
                         </group>
                             </group>
                         </page>
                         <page string="Descripción">
-                            <field name="description" nolabel="1"/>
+                            <field name="description" nolabel="1" readonly="1"/>
                         </page>
                         <page string="Atributos de Mercado Libre">
                             <div class="alert alert-info" role="alert">
@@ -116,12 +106,12 @@
                                 <field name="ml_attribute_ids" nolabel="1" 
                                        context="{'default_publication_id': id}"
                                        options="{'no_create': True, 'no_open': True}">
-                                    <list string="Atributos de Mercado Libre" editable="bottom" 
+                                    <list string="Atributos de Mercado Libre"
+                                          create="0" delete="0" edit="0"
                                           default_order="sequence,id"
                                           decoration-danger="required and not value_id and not value_name and value_number == 0"
-                                          decoration-muted="not required"
-                                          create="0">
-                                        <field name="sequence" widget="handle" optional="hide"/>
+                                          decoration-muted="not required">
+                                        <field name="sequence" widget="handle" optional="hide" readonly="1"/>
                                         <field name="is_common" string="Común" readonly="1" widget="boolean_toggle" optional="hide"/>
                                         <field name="name" invisible="1"/>
                                         <field name="name_display" string="Atributo" readonly="1"/>
@@ -131,6 +121,7 @@
                                         
                                         <field name="value_id"
                                                string="ID Valor"
+                                               readonly="1"
                                                placeholder="ID del valor (si aplica)"/>
                                         <field name="value_id_display" 
                                                string="Valor seleccionado"
@@ -141,20 +132,24 @@
                                         <field name="value_name" 
                                                string="Valor (texto)"
                                                invisible="value_type != 'value_name'"
+                                               readonly="1"
                                                placeholder="Ingrese el valor del atributo..."/>
                                         <!-- Columnas para números (number/number_unit) -->
                                         <field name="value_number" 
                                                string="Valor numérico"
                                                invisible="value_type not in ['number', 'number_unit']"
+                                               readonly="1"
                                                placeholder="0.0"/>
                                         <field name="value_unit" 
                                                string="Unidad (texto)"
                                                invisible="value_type != 'number_unit'"
+                                               readonly="1"
                                                placeholder="kg, cm, etc."/>
                                         <!-- Columna para archivos/imágenes (picture) -->
                                         <field name="value_file" 
                                                string="Archivo/Imagen"
                                                invisible="value_type != 'picture'"
+                                               readonly="1"
                                                widget="binary"
                                                filename="value_file_name"
                                                help="Suba el archivo o imagen requerido para este atributo"/>
@@ -180,24 +175,26 @@
                             <field name="ml_variant_ids" nolabel="1" 
                                    context="{'default_publication_id': id}"
                                    options="{'no_create': True}">
-                                <list string="Variantes del Producto" editable="bottom" 
+                                <list string="Variantes del Producto"
+                                      create="0" delete="0" edit="0"
                                       default_order="sequence,id">
-                                    <field name="sequence" widget="handle" optional="hide"/>
+                                    <field name="sequence" widget="handle" optional="hide" readonly="1"/>
                                     <field name="display_name" string="Publicación | Variante" readonly="1"/>
-                                    <field name="product_variant_id" string="Producto / Variante Odoo" optional="show"/>
-                                    <field name="variant_name" string="Nombre variante" optional="hide"/>
-                                    <field name="image_1920" widget="image" string="Imagen Legacy" optional="hide"/>
+                                    <field name="product_variant_id" string="Producto / Variante Odoo" readonly="1" optional="show"/>
+                                    <field name="variant_name" string="Nombre variante" readonly="1" optional="hide"/>
+                                    <field name="image_1920" widget="image" string="Imagen Legacy" readonly="1" optional="hide"/>
                                     <field name="image_ml_picture_id" string="ID Imagen ML Legacy" readonly="1" optional="hide"/>
                                     <field name="image_ids" string="Imágenes" 
+                                           readonly="1"
                                            context="{'default_variant_id': id, 'default_publication_id': parent.id, 'skip_ml_publish': True}"
                                            nolabel="1"
-                                           options="{'no_create': False}"
+                                           options="{'no_create': True}"
                                            view_id="%(view_ml_publication_variant_image_list)d"/>
                                     <field name="price" string="Precio" readonly="1"/>
-                                    <field name="available_quantity" string="Cantidad"/>
-                                    <field name="seller_sku" string="SKU"/>
-                                    <field name="gtin" string="GTIN"/>
-                                    <field name="attribute_combination_ids" nolabel="1" context="{'default_variant_id': id}"/>
+                                    <field name="available_quantity" string="Cantidad" readonly="1"/>
+                                    <field name="seller_sku" string="SKU" readonly="1"/>
+                                    <field name="gtin" string="GTIN" readonly="1"/>
+                                    <field name="attribute_combination_ids" nolabel="1" readonly="1" context="{'default_variant_id': id}"/>
                                 </list>
                             </field>
                         </page>
@@ -209,35 +206,38 @@
                                    context="{'default_publication_id': id, 'skip_ml_publish': True}"
                                    nolabel="1"
                                    mode="list,form"
-                                   options="{'no_create': False}">
-                                <list string="Imágenes de la Publicación" editable="bottom" default_order="sequence,id">
-                                    <field name="sequence" widget="handle"/>
-                                    <field name="image_1920" widget="image" options="{'size': [64, 64]}"/>
+                                   readonly="1"
+                                   options="{'no_create': True}">
+                                <list string="Imágenes de la Publicación" create="0" delete="0" edit="0" default_order="sequence,id">
+                                    <field name="sequence" widget="handle" readonly="1"/>
+                                    <field name="image_1920" widget="image" readonly="1" options="{'size': [64, 64]}"/>
                                     <field name="publication_id" invisible="1"/>
                                     <field name="product_variant_id"
                                            string="Variante del Producto"
                                            invisible="not parent.has_variants"
+                                           readonly="1"
                                            options="{'no_create': True, 'no_create_edit': True, 'no_open': True}"
                                            domain="[('product_tmpl_id', '=', parent.product_tmpl_id)]"
                                            placeholder="Seleccione una variante del producto (opcional)"/>
                                     <field name="variant_id" invisible="1"/>
                                     <field name="ml_picture_id" readonly="1" optional="hide"/>
                                 </list>
-                                <form string="Imagen de publicación">
+                                <form string="Imagen de publicación" edit="0" create="0" delete="0">
                                     <sheet>
                                         <group>
                                             <group>
-                                                <field name="image_1920" widget="image" class="oe_avatar"/>
+                                                <field name="image_1920" widget="image" class="oe_avatar" readonly="1"/>
                                             </group>
                                             <group>
                                                 <field name="publication_id" invisible="1"/>
                                                 <field name="product_variant_id"
                                                        invisible="not parent.has_variants"
+                                                       readonly="1"
                                                        options="{'no_create': True, 'no_create_edit': True, 'no_open': True}"
                                                        domain="[('product_tmpl_id', '=', parent.product_tmpl_id)]"
                                                        placeholder="Seleccione una variante del producto (opcional)"/>
                                                 <field name="variant_id" invisible="1"/>
-                                                <field name="sequence"/>
+                                                <field name="sequence" readonly="1"/>
                                                 <field name="ml_picture_id" readonly="1"/>
                                             </group>
                                         </group>
@@ -266,6 +266,22 @@
                                            placeholder="Si está vacío, se usará el valor global de la cuenta"/>
                                 </group>
                             </group>
+                        </page>
+                        <page string="Historial de sync" invisible="not ml_account_id">
+                            <field name="sync_log_ids" nolabel="1" readonly="1"
+                                   context="{'default_publication_id': id, 'default_ml_account_id': ml_account_id}">
+                                <list string="Auditoría de sincronización" create="0" edit="0" delete="0"
+                                      default_order="create_date desc">
+                                    <field name="create_date"/>
+                                    <field name="operation"/>
+                                    <field name="trigger"/>
+                                    <field name="result"/>
+                                    <field name="value_before" optional="show"/>
+                                    <field name="value_after" optional="show"/>
+                                    <field name="http_status" optional="hide"/>
+                                    <field name="duration_ms" optional="hide"/>
+                                </list>
+                            </field>
                         </page>
                     </notebook>
                 </sheet>

@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_ml_sync_log_list" model="ir.ui.view">
+        <field name="name">ml.sync.log.list</field>
+        <field name="model">ml.sync.log</field>
+        <field name="arch" type="xml">
+            <list string="Auditoría sync ML" create="0" delete="0" default_order="create_date desc">
+                <field name="create_date"/>
+                <field name="ml_account_id"/>
+                <field name="publication_id"/>
+                <field name="operation"/>
+                <field name="trigger"/>
+                <field name="result"/>
+                <field name="value_before" optional="hide"/>
+                <field name="value_after" optional="hide"/>
+                <field name="http_status" optional="hide"/>
+                <field name="duration_ms" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ml_sync_log_form" model="ir.ui.view">
+        <field name="name">ml.sync.log.form</field>
+        <field name="model">ml.sync.log</field>
+        <field name="arch" type="xml">
+            <form string="Log de sincronización ML" create="0" edit="0" delete="0">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="create_date"/>
+                            <field name="ml_account_id"/>
+                            <field name="publication_id"/>
+                            <field name="operation"/>
+                            <field name="trigger"/>
+                            <field name="result"/>
+                        </group>
+                        <group>
+                            <field name="http_status"/>
+                            <field name="duration_ms"/>
+                            <field name="value_before"/>
+                            <field name="value_after"/>
+                        </group>
+                    </group>
+                    <group string="Error" invisible="result != 'error'">
+                        <field name="error_message" nolabel="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_ml_sync_log_search" model="ir.ui.view">
+        <field name="name">ml.sync.log.search</field>
+        <field name="model">ml.sync.log</field>
+        <field name="arch" type="xml">
+            <search string="Auditoría sync ML">
+                <field name="publication_id"/>
+                <field name="ml_account_id"/>
+                <field name="operation"/>
+                <field name="result"/>
+                <field name="create_date"/>
+                <filter string="Errores" name="filter_errors" domain="[('result', '=', 'error')]"/>
+                <filter string="OK" name="filter_ok" domain="[('result', '=', 'ok')]"/>
+                <separator/>
+                <filter string="Fecha" name="filter_create_date" date="create_date"/>
+                <group expand="0" string="Agrupar">
+                    <filter string="Publicación" name="group_publication" context="{'group_by': 'publication_id'}"/>
+                    <filter string="Resultado" name="group_result" context="{'group_by': 'result'}"/>
+                    <filter string="Fecha" name="group_create_date" context="{'group_by': 'create_date:day'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_ml_sync_log" model="ir.actions.act_window">
+        <field name="name">Auditoría sync MercadoLibre</field>
+        <field name="res_model">ml.sync.log</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_ml_sync_log_search"/>
+        <field name="context">{}</field>
+    </record>
+</odoo>

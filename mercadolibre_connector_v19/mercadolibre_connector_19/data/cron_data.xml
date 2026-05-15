@@ -21,6 +21,15 @@
             <field name="interval_type">minutes</field>
             <field name="active" eval="True"/>
         </record>
+        <!-- Auditoría ml.sync.log: borrar OK antiguos; conservar errores -->
+        <record id="ir_cron_purge_ml_sync_log_ok" model="ir.cron">
+            <field name="name">Limpiar logs OK de sync ML (&gt;30 días)</field>
+            <field name="model_id" ref="model_ml_sync_log"/>
+            <field name="state">code</field>
+            <field name="code">model.cron_purge_old_ok_logs()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">months</field>
+            <field name="active" eval="True"/>
+        </record>
     </data>
 </odoo>
-

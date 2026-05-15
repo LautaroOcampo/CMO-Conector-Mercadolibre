@@ -372,6 +372,154 @@ class MLSale(models.Model):
          'Ya existe una venta con este ID de MercadoLibre para esta compañía!')
     ]
 
+    def write(self, vals):
+        becoming_cancelled = self.env['ml.sale']
+        if vals.get('status') == 'cancelled':
+            becoming_cancelled = self.filtered(lambda r: r.status != 'cancelled')
+        res = super().write(vals)
+        if becoming_cancelled:
+            becoming_cancelled._sync_odoo_on_ml_cancelled()
+        return res
+
+    def _sync_odoo_on_ml_cancelled(self):
+        """
+        Cuando ML cancela la orden (status=cancelled en ml.sale):
+        - Sin orden Odoo: no hace nada más (el write ya guardó el estado).
+        - Con orden Odoo: pickings, facturas, cancelación de venta y actividad según reglas.
+        """
+        for rec in self:
+            sale = rec.odoo_sale_order_id
+            if not sale:
+                continue
+            lines = []
+            if sale.state == 'cancel':
+                lines.append(_('Orden de venta Odoo %s ya estaba cancelada.') % sale.name)
+                rec._ml_cancel_post_activity(sale, lines)
+                continue
+
+            pickings = sale.picking_ids
+            if any(p.state == 'done' for p in pickings):
+                lines.append(
+                    _('Pickings: hay al menos una transferencia en estado Hecho (done). '
+                      'No se cancela automáticamente la venta ni las facturas; gestionar devolución manualmente.')
+                )
+                rec._ml_cancel_post_activity(sale, lines)
+                continue
+
+            # 1) Pickings cancelables (draft / esperando / listo = assigned; sin done/cancel)
+            for picking in pickings:
+                if picking.state in ('cancel', 'done'):
+                    continue
+                if picking.state in ('draft', 'waiting', 'confirmed', 'assigned'):
+                    try:
+                        picking.action_cancel()
+                        lines.append(_('Picking %s cancelado.') % (picking.name or str(picking.id)))
+                    except Exception as err:
+                        lines.append(
+                            _('Picking %s: error al cancelar: %s')
+                            % (picking.name or str(picking.id), err)
+                        )
+                        _logger.exception(
+                            'Error cancelando picking %s para ml.sale %s',
+                            picking.id, rec.ml_order_id
+                        )
+                else:
+                    lines.append(
+                        _('Picking %s: estado %s no tratado automáticamente.')
+                        % (picking.name or str(picking.id), picking.state)
+                    )
+
+            # 2) Facturas (borrador cancelar; publicada → NC en borrador, sin publicar)
+            lines.extend(rec._ml_cancel_handle_customer_invoices(sale))
+
+            # 3) Orden de venta
+            if sale.state != 'cancel':
+                try:
+                    sale.action_cancel()
+                    lines.append(_('Orden de venta %s cancelada.') % sale.name)
+                except Exception as err:
+                    lines.append(_('Error al cancelar la orden de venta: %s') % err)
+                    _logger.exception(
+                        'Error en action_cancel para sale.order %s (ml.sale %s)',
+                        sale.id, rec.ml_order_id
+                    )
+            else:
+                lines.append(_('Orden de venta %s quedó cancelada.') % sale.name)
+
+            rec._ml_cancel_post_activity(sale, lines)
+
+    def _ml_cancel_handle_customer_invoices(self, sale_order):
+        """Facturas de cliente: borrador → cancelar; publicada → reversión en borrador (sin publicar)."""
+        self.ensure_one()
+        lines = []
+        invoices = sale_order.invoice_ids.filtered(
+            lambda m: m.move_type == 'out_invoice' and m.state != 'cancel'
+        )
+        for inv in invoices:
+            if inv.state == 'draft':
+                try:
+                    cancel_draft = getattr(inv, 'button_cancel', None) or getattr(inv, 'action_cancel', None)
+                    if not cancel_draft:
+                        raise ValueError('no draft cancel method on account.move')
+                    cancel_draft()
+                    lines.append(_('Factura borrador cancelada: %s.') % (inv.name or str(inv.id)))
+                except Exception as err:
+                    lines.append(
+                        _('Factura borrador %s: no se pudo cancelar: %s')
+                        % (inv.name or str(inv.id), err)
+                    )
+                    _logger.exception(
+                        'Error button_cancel factura borrador %s (ml.sale %s)',
+                        inv.id, self.ml_order_id
+                    )
+            elif inv.state == 'posted':
+                try:
+                    reversals = inv._reverse_moves(cancel=False)
+                    for rev in reversals:
+                        if rev.state == 'posted':
+                            lines.append(
+                                _('Nota de crédito %s quedó publicada (revisar; se esperaba borrador).')
+                                % (rev.name or str(rev.id))
+                            )
+                        else:
+                            lines.append(
+                                _('Nota de crédito en borrador creada: %s.')
+                                % (rev.name or str(rev.id))
+                            )
+                except Exception as err:
+                    lines.append(
+                        _('Factura publicada %s: error al generar nota de crédito: %s')
+                        % (inv.name or str(inv.id), err)
+                    )
+                    _logger.exception(
+                        'Error _reverse_moves para factura %s (ml.sale %s)',
+                        inv.id, self.ml_order_id
+                    )
+        return lines
+
+    def _ml_cancel_post_activity(self, sale_order, summary_lines):
+        """Actividad tipo tarea en la orden de venta con resumen para el responsable."""
+        self.ensure_one()
+        if not summary_lines:
+            summary_lines = [
+                _('Venta MercadoLibre %s marcada como cancelada.') % self.ml_order_id
+            ]
+        note = '\n'.join(summary_lines)
+        try:
+            todo_type = self.env.ref('mail.mail_activity_data_todo')
+            assign_user = sale_order.user_id or sale_order.create_uid or self.env.user
+            sale_order.activity_schedule(
+                activity_type_id=todo_type.id,
+                user_id=assign_user.id,
+                summary=_('MercadoLibre: orden ML cancelada (%s)') % self.ml_order_id,
+                note=note,
+            )
+        except Exception as err:
+            _logger.warning(
+                'No se pudo crear actividad en sale.order %s (ml.sale %s): %s',
+                sale_order.id, self.ml_order_id, err
+            )
+
     # 🔹 Método para importar ventas desde Mercado Libre
     @api.model
     def action_import_sales_from_ml(self):
@@ -455,7 +603,8 @@ class MLSale(models.Model):
             account_id: ID de la cuenta de ML (opcional, se busca automáticamente si no se proporciona)
             create_odoo_order: Si True, crea automáticamente la orden de venta en Odoo y la factura (default: True)
             update_stock: Si True, se descontará el stock al confirmar las órdenes (default: True)
-            create_customer: Si True, crea/actualiza el contacto del cliente en Odoo (default: True)
+            create_customer: Si True, crea/actualiza el contacto del cliente en Odoo (default: True).
+                Si la cuenta tiene auto_create_invoice desactivado, se ignora y no se crean clientes.
         
         Returns:
             ml.sale: Registro creado o actualizado
@@ -528,7 +677,14 @@ class MLSale(models.Model):
         if not account.access_token:
             _logger.error("❌ La cuenta %s no tiene access_token válido.", account.name)
             return None
-        
+
+        if not account.auto_create_invoice:
+            create_customer = False
+            _logger.info(
+                "ℹ️ create_customer=False (cuenta %s: auto_create_invoice desactivado; no se crea/actualiza contacto).",
+                account.name,
+            )
+
         url = f'https://api.mercadolibre.com/orders/{order_id}'
         headers = {'Authorization': f'Bearer {account.access_token}'}
         
@@ -678,36 +834,48 @@ class MLSale(models.Model):
             date_closed = None
             
             def parse_iso_datetime(iso_string, account_obj=None):
-                """Convierte fecha ISO 8601 a formato Odoo Datetime usando la zona horaria configurada"""
+                """
+                Convierte fecha ISO 8601 de ML a string almacenable en Odoo (UTC, coherente con Datetime).
+                - Con offset / Z: se respeta el instante absoluto.
+                - Sin zona: se interpreta en `account_obj.timezone` (zona horaria de la cuenta ML).
+                """
                 if not iso_string:
                     return None
                 try:
-                    # Usar fromisoformat que maneja el formato ISO 8601 completo
-                    # Formato: 2026-01-07T15:50:21.000-04:00
                     dt = datetime.fromisoformat(iso_string.replace('Z', '+00:00'))
-                    
-                    # Si la fecha tiene timezone info, convertir a la zona horaria configurada
-                    if dt.tzinfo is not None and account_obj:
-                        # Obtener zona horaria configurada en la cuenta
-                        account_timezone = account_obj.timezone or 'America/Argentina/Buenos_Aires'
+                    if dt.tzinfo is None:
+                        tz_name = (account_obj and account_obj.timezone) or 'America/Argentina/Buenos_Aires'
                         try:
-                            tz = pytz.timezone(account_timezone)
-                            # Convertir a la zona horaria configurada
-                            dt = dt.astimezone(tz)
-                            _logger.debug("🕐 Fecha convertida a zona horaria %s: %s", account_timezone, dt)
-                        except Exception as tz_error:
-                            _logger.warning("⚠️ Error con zona horaria %s: %s. Usando fecha original.", account_timezone, tz_error)
-                    
-                    # Convertir a formato Odoo (sin timezone, formato naive)
-                    dt_naive = dt.replace(tzinfo=None) if dt.tzinfo else dt
-                    return fields.Datetime.to_string(dt_naive)
+                            local_tz = pytz.timezone(tz_name)
+                            dt = local_tz.localize(dt)
+                            _logger.debug(
+                                "🕐 Fecha sin zona interpretada en huso de cuenta ML (%s): %s",
+                                tz_name, dt
+                            )
+                        except Exception as tz_err:
+                            _logger.warning(
+                                "⚠️ Error localizando fecha sin zona con %s: %s. Usando UTC.",
+                                tz_name, tz_err
+                            )
+                            dt = pytz.UTC.localize(dt)
+                    dt_utc = dt.astimezone(pytz.UTC).replace(tzinfo=None)
+                    return fields.Datetime.to_string(dt_utc)
                 except Exception as e:
                     _logger.warning("⚠️ Error parseando fecha ISO '%s': %s", iso_string, str(e))
-                    # Intentar parseo manual como fallback
                     try:
                         dt_str = iso_string.split('.')[0].replace('T', ' ')
-                        dt = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
-                        return fields.Datetime.to_string(dt)
+                        dt_naive = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
+                        if account_obj and account_obj.timezone:
+                            try:
+                                local_tz = pytz.timezone(account_obj.timezone)
+                                dt_loc = local_tz.localize(dt_naive)
+                                dt_utc = dt_loc.astimezone(pytz.UTC).replace(tzinfo=None)
+                                return fields.Datetime.to_string(dt_utc)
+                            except Exception:
+                                pass
+                        return fields.Datetime.to_string(
+                            pytz.UTC.localize(dt_naive).replace(tzinfo=None)
+                        )
                     except Exception:
                         return None
             
@@ -945,7 +1113,7 @@ class MLSale(models.Model):
             if create_customer:
                 try:
                     _logger.info("🔄 Creando/actualizando cliente en Odoo para ML Order ID: %s", ml_order_id)
-                    partner = order._get_or_create_customer()
+                    partner = order._get_or_create_customer(allow_create=create_customer)
                     if partner:
                         _logger.info("✅ Cliente creado/actualizado: %s (ID: %s)", partner.name, partner.id)
                     else:
@@ -963,14 +1131,36 @@ class MLSale(models.Model):
             # el wizard de importación masiva debe impedir esta combinación.
             if create_odoo_order and not order.odoo_sale_order_id:
                 if not order.odoo_partner_id:
-                    _logger.warning("⚠️ No se puede crear orden de venta Odoo sin contacto (odoo_partner_id vacío). ML Order ID: %s", ml_order_id)
+                    default_partner = order.ml_account_id.default_order_partner_id
+                    if default_partner:
+                        order.odoo_partner_id = default_partner.id
+                        _logger.warning(
+                            "⚠️ No se pudo crear/matchear cliente para ML Order ID %s. "
+                            "Usando contacto por defecto: %s (ID: %s)",
+                            ml_order_id, default_partner.name, default_partner.id
+                        )
+                    else:
+                        _logger.warning(
+                            "⚠️ No se puede crear orden de venta Odoo sin contacto "
+                            "(odoo_partner_id vacío y sin contacto por defecto en la cuenta). "
+                            "ML Order ID: %s",
+                            ml_order_id
+                        )
+                if not order.odoo_partner_id:
+                    _logger.warning(
+                        "⚠️ Orden Odoo no creada para ML Order ID %s por falta de contacto.",
+                        ml_order_id
+                    )
                 else:
                     try:
                         _logger.info("🔄 Creando orden de venta Odoo automáticamente para ML Order ID: %s (update_stock=%s, is_test_sale=%s)", 
                                    ml_order_id, update_stock, is_test_sale)
                         # Solo cancelar pickings si update_stock es False explícitamente (no por ser test)
                         actual_update_stock = update_stock  # Mantener el valor original, no cancelar por ser test
-                        order.create_odoo_sale_order(update_stock=actual_update_stock)
+                        order_ctx = dict(self.env.context)
+                        if not create_customer:
+                            order_ctx['ml_skip_contact_create'] = True
+                        order.with_context(**order_ctx).create_odoo_sale_order(update_stock=actual_update_stock)
                         _logger.info("✅ Orden de venta Odoo creada automáticamente: %s", order.odoo_sale_order_id.name if order.odoo_sale_order_id else 'N/A')
                     except Exception as e:
                         _logger.error("❌ Error creando orden de venta en Odoo automáticamente: %s", str(e), exc_info=True)
@@ -1088,220 +1278,150 @@ class MLSale(models.Model):
         
         return category
     
-    def _get_or_create_customer(self):
+    def _get_or_create_customer(self, allow_create=True):
         """
-        Crea o busca el cliente en Odoo basándose en los datos de la orden.
-        Asigna la categoría "Cliente MELI" con color amarillo.
-        Importa todos los datos personales y de dirección.
-        
-        Returns:
-            res.partner: Cliente creado o encontrado
+        Busca o crea el contacto en Odoo para la venta ML.
+
+        - Match principal: ``meli_buyer_id`` (ID comprador ML), único.
+        - Creación de contacto nuevo: solo si ``allow_create`` y hay nombre, apellido y provincia.
+        - Si no hay contacto reconocible y no se puede crear: ``ml.account.default_order_partner_id``.
         """
         self.ensure_one()
-        
-        # Si ya tiene un cliente asignado, asegurar que tenga la categoría
-        if self.odoo_partner_id:
-            partner = self.odoo_partner_id
-            # Asegurar que tenga la categoría MELI
-            meli_category = self._get_or_create_meli_category()
-            if meli_category.id not in partner.category_id.ids:
-                partner.write({'category_id': [(4, meli_category.id)]})
-                _logger.info("✅ Categoría 'Cliente MELI' asignada a cliente existente: %s", partner.name)
-            return partner
-        
-        # Obtener o crear la categoría MELI
+
+        def _normalize(value):
+            return re.sub(r'\s+', ' ', (value or '').strip())
+
+        default_partner = self.ml_account_id.default_order_partner_id
+
+        def _use_default(reason_log):
+            if not default_partner:
+                _logger.warning(
+                    "⚠️ ML Order %s: %s y no hay default_order_partner_id en la cuenta.",
+                    self.ml_order_id,
+                    reason_log,
+                )
+                return self.env['res.partner']
+            _logger.info(
+                "ℹ️ ML Order %s: %s — usando contacto por defecto de cuenta: %s (id=%s)",
+                self.ml_order_id,
+                reason_log,
+                default_partner.name,
+                default_partner.id,
+            )
+            self.odoo_partner_id = default_partner.id
+            return default_partner
+
+        normalized_full_name = _normalize(self.customer_name)
+        name_parts = [part for part in normalized_full_name.split(' ') if part]
+        first_name = name_parts[0] if name_parts else ''
+        last_name = ' '.join(name_parts[1:]) if len(name_parts) > 1 else ''
+        normalized_state = _normalize(self.shipping_state)
+        normalized_street = _normalize(self.shipping_street)
+        normalized_email = _normalize(self.customer_email).lower()
+        minimum_for_new = bool(first_name and last_name and normalized_state)
+
         meli_category = self._get_or_create_meli_category()
-        
-        partner = None
+        account_cc = (self.ml_account_id.country_id.code or 'AR').upper()
 
-        # 1) Buscar primero por buyer_id (para evitar duplicados)
-        if self.buyer_id:
-            partner = self.env['res.partner'].search([
-                ('meli_buyer_id', '=', str(self.buyer_id)),
+        state = self.env['res.country.state'].browse()
+        if normalized_state:
+            state = self.env['res.country.state'].search([
+                ('name', 'ilike', normalized_state),
                 '|',
-                ('company_id', '=', False),
-                ('company_id', '=', self.env.company.id)
+                ('country_id', '=', False),
+                ('country_id.code', '=', account_cc),
             ], limit=1)
 
-        # 2) Si no se encuentra por buyer_id, buscar por email (fallback)
-        if not partner and self.customer_email:
+        partner = self.env['res.partner']
+        buyer_key = (str(self.buyer_id).strip() if self.buyer_id else '') or ''
+        if buyer_key:
             partner = self.env['res.partner'].search([
-                ('email', '=', self.customer_email),
+                ('meli_buyer_id', '=', buyer_key),
                 '|',
                 ('company_id', '=', False),
-                ('company_id', '=', self.env.company.id)
+                ('company_id', '=', self.env.company.id),
             ], limit=1)
-        
-        # 3) Si no se encuentra por buyer_id/email, buscar por nombre (fallback)
-        if not partner and self.customer_name:
-            partner = self.env['res.partner'].search([
-                ('name', 'ilike', self.customer_name),
-                '|',
-                ('company_id', '=', False),
-                ('company_id', '=', self.env.company.id)
-            ], limit=1)
-        
-        # Si no existe, crear el cliente
-        if not partner:
-            # Preparar datos personales
-            partner_vals = {
-                'name': self.customer_name or self.buyer_nickname or f'Cliente ML {self.buyer_id}',
-                'email': self.customer_email or False,
-                'phone': self.customer_phone or False,
-                'mobile': False,  # Se puede agregar si está disponible
-                'vat': self.customer_dni or False,
-                'comment': f'Cliente de MercadoLibre\nNickname: {self.buyer_nickname or "N/A"}\nID ML: {self.buyer_id or "N/A"}',
-                'meli_buyer_id': str(self.buyer_id) if self.buyer_id else False,
-                'is_company': False,
-                'category_id': [(6, 0, [meli_category.id])],  # Asignar categoría MELI
-            }
-            
-            # Agregar dirección completa si está disponible
-            _logger.info("🏠 Verificando datos de dirección para cliente nuevo:")
-            _logger.info("   shipping_street: '%s'", self.shipping_street)
-            _logger.info("   shipping_city: '%s'", self.shipping_city)
-            _logger.info("   shipping_street_number: '%s'", self.shipping_street_number)
-            _logger.info("   shipping_floor: '%s'", self.shipping_floor)
-            _logger.info("   shipping_apartment: '%s'", self.shipping_apartment)
-            _logger.info("   shipping_zip: '%s'", self.shipping_zip)
-            _logger.info("   shipping_state: '%s'", self.shipping_state)
-            _logger.info("   shipping_country: '%s'", self.shipping_country)
-            
-            # Agregar dirección completa si está disponible
-            if self.shipping_street or self.shipping_city:
-                # Construir street2 con todos los datos adicionales
-                street2_parts = []
-                if self.shipping_street_number:
-                    street2_parts.append(f"N° {self.shipping_street_number}")
-                if self.shipping_floor:
-                    street2_parts.append(f"Piso {self.shipping_floor}")
-                if self.shipping_apartment:
-                    street2_parts.append(f"Depto {self.shipping_apartment}")
-                
-                partner_vals['street'] = self.shipping_street or ''
-                partner_vals['street2'] = ', '.join(street2_parts) if street2_parts else ''
-                partner_vals['city'] = self.shipping_city or ''
-                partner_vals['zip'] = self.shipping_zip or ''
-                
-                _logger.info("✅ Dirección agregada al cliente nuevo:")
-                _logger.info("   street: '%s'", partner_vals['street'])
-                _logger.info("   street2: '%s'", partner_vals['street2'])
-                _logger.info("   city: '%s'", partner_vals['city'])
-                _logger.info("   zip: '%s'", partner_vals['zip'])
-            else:
-                _logger.warning("⚠️ No hay datos de dirección disponibles para cliente nuevo (shipping_street='%s', shipping_city='%s')", 
-                              self.shipping_street, self.shipping_city)
-            
-            # Mapear estado/provincia si está disponible (siempre, no solo cuando no hay dirección)
-            if self.shipping_state:
-                state = self.env['res.country.state'].search([
-                    ('name', 'ilike', self.shipping_state),
-                    '|',
-                    ('country_id', '=', False),
-                    ('country_id.code', '=', 'AR')  # Por defecto Argentina
-                ], limit=1)
-                if state:
-                    partner_vals['state_id'] = state.id
-                    _logger.info("✅ Estado/Provincia mapeado: %s (ID: %s)", state.name, state.id)
-                else:
-                    # Si no se encuentra, guardar en comentarios
-                    if partner_vals.get('comment'):
-                        partner_vals['comment'] += f'\nProvincia: {self.shipping_state}'
-                    else:
-                        partner_vals['comment'] = f'Provincia: {self.shipping_state}'
-                    _logger.warning("⚠️ No se encontró estado/provincia: %s", self.shipping_state)
-            
-            # Mapear país si está disponible (siempre, no solo cuando no hay dirección)
-            if self.shipping_country:
-                country = self.env['res.country'].search([
-                    ('name', 'ilike', self.shipping_country)
-                ], limit=1)
-                if country:
-                    partner_vals['country_id'] = country.id
-                    _logger.info("✅ País mapeado: %s (ID: %s)", country.name, country.id)
-                else:
-                    # Por defecto Argentina si no se encuentra
-                    ar_country = self.env['res.country'].search([('code', '=', 'AR')], limit=1)
-                    if ar_country:
-                        partner_vals['country_id'] = ar_country.id
-                        _logger.warning("⚠️ No se encontró país: %s. Usando Argentina por defecto", self.shipping_country)
-            else:
-                # Por defecto Argentina si no hay país
-                ar_country = self.env['res.country'].search([('code', '=', 'AR')], limit=1)
-                if ar_country:
-                    partner_vals['country_id'] = ar_country.id
-                    _logger.info("✅ País por defecto: Argentina")
-            
-            partner = self.env['res.partner'].create(partner_vals)
-            _logger.info("✅ Cliente creado: %s (ID: %s) con categoría 'Cliente MELI'", partner.name, partner.id)
-        else:
-            # Actualizar datos si faltan y asegurar categoría MELI
+        if partner:
             update_vals = {}
-            if not partner.email and self.customer_email:
-                update_vals['email'] = self.customer_email
-            if not partner.phone and self.customer_phone:
-                update_vals['phone'] = self.customer_phone
-            if not partner.vat and self.customer_dni:
-                update_vals['vat'] = self.customer_dni
-            if self.buyer_id and not partner.meli_buyer_id:
-                update_vals['meli_buyer_id'] = str(self.buyer_id)
-            
-            # Actualizar dirección si está disponible y no tiene dirección
-            if (self.shipping_street or self.shipping_city) and not partner.street:
-                street2_parts = []
-                if self.shipping_street_number:
-                    street2_parts.append(f"N° {self.shipping_street_number}")
-                if self.shipping_floor:
-                    street2_parts.append(f"Piso {self.shipping_floor}")
-                if self.shipping_apartment:
-                    street2_parts.append(f"Depto {self.shipping_apartment}")
-                
-                update_vals['street'] = self.shipping_street or ''
-                update_vals['street2'] = ', '.join(street2_parts) if street2_parts else ''
-                update_vals['city'] = self.shipping_city or ''
-                update_vals['zip'] = self.shipping_zip or ''
-            
-            # Mapear estado y país siempre que estén disponibles (incluso si ya tiene dirección)
-            if self.shipping_state and not partner.state_id:
-                state = self.env['res.country.state'].search([
-                    ('name', 'ilike', self.shipping_state)
-                ], limit=1)
-                if state:
-                    update_vals['state_id'] = state.id
-                    _logger.info("✅ Estado/Provincia actualizado: %s (ID: %s)", state.name, state.id)
-            
-            if self.shipping_country and not partner.country_id:
-                country = self.env['res.country'].search([
-                    ('name', 'ilike', self.shipping_country)
-                ], limit=1)
-                if country:
-                    update_vals['country_id'] = country.id
-                    _logger.info("✅ País actualizado: %s (ID: %s)", country.name, country.id)
-            
-            # Asegurar que tenga la categoría MELI
             if meli_category.id not in partner.category_id.ids:
-                if 'category_id' in update_vals:
-                    # Agregar a las categorías existentes
-                    existing_categories = partner.category_id.ids
-                    existing_categories.append(meli_category.id)
-                    update_vals['category_id'] = [(6, 0, existing_categories)]
-                else:
-                    # Agregar a las categorías existentes
-                    existing_categories = partner.category_id.ids
-                    existing_categories.append(meli_category.id)
-                    update_vals['category_id'] = [(6, 0, existing_categories)]
-            
+                update_vals['category_id'] = [(4, meli_category.id)]
+            if normalized_email and (not partner.email or partner.email != normalized_email):
+                update_vals['email'] = normalized_email
+            if self.customer_phone and not partner.phone:
+                update_vals['phone'] = self.customer_phone
+            if self.customer_dni and not partner.vat:
+                update_vals['vat'] = self.customer_dni
+            if normalized_street and not partner.street:
+                update_vals['street'] = normalized_street
+            if self.shipping_city and not partner.city:
+                update_vals['city'] = self.shipping_city or False
+            if state and not partner.state_id:
+                update_vals['state_id'] = state.id
             if update_vals:
                 partner.write(update_vals)
-                _logger.info("✅ Cliente actualizado: %s con categoría 'Cliente MELI'", partner.name)
-            elif meli_category.id not in partner.category_id.ids:
-                # Solo actualizar categoría si no hay otros cambios
-                partner.write({'category_id': [(4, meli_category.id)]})
-                _logger.info("✅ Categoría 'Cliente MELI' asignada a cliente: %s", partner.name)
-        
-        # Guardar referencia al cliente
+            self.odoo_partner_id = partner.id
+            _logger.info(
+                "✅ Cliente ML por meli_buyer_id=%s: %s (id=%s)",
+                buyer_key,
+                partner.name,
+                partner.id,
+            )
+            return partner
+
+        if not allow_create:
+            return _use_default('importación sin crear contacto (ml_skip_contact_create)')
+
+        if not minimum_for_new:
+            return _use_default(
+                "sin match por buyer_id y faltan nombre/apellido/provincia para crear contacto"
+            )
+
+        street2_parts = []
+        if self.shipping_street_number:
+            street2_parts.append(f"N° {self.shipping_street_number}")
+        if self.shipping_floor:
+            street2_parts.append(f"Piso {self.shipping_floor}")
+        if self.shipping_apartment:
+            street2_parts.append(f"Depto {self.shipping_apartment}")
+
+        partner_vals = {
+            'name': normalized_full_name,
+            'email': normalized_email or False,
+            'phone': self.customer_phone or False,
+            'vat': self.customer_dni or False,
+            'comment': (
+                f'Cliente de MercadoLibre\n'
+                f'Nickname: {self.buyer_nickname or "N/A"}\n'
+                f'ID ML: {self.buyer_id or "N/A"}'
+            ),
+            'meli_buyer_id': buyer_key or False,
+            'is_company': False,
+            'category_id': [(6, 0, [meli_category.id])],
+            'street': normalized_street or False,
+            'street2': ', '.join(street2_parts) if street2_parts else False,
+            'city': self.shipping_city or False,
+            'zip': self.shipping_zip or False,
+        }
+        if state:
+            partner_vals['state_id'] = state.id
+        else:
+            partner_vals['comment'] += f'\nProvincia: {normalized_state}'
+
+        country = False
+        if self.shipping_country:
+            country = self.env['res.country'].search([
+                ('name', 'ilike', self.shipping_country)
+            ], limit=1)
+        if not country:
+            country = self.env['res.country'].search(
+                [('code', '=', account_cc)], limit=1
+            )
+        if country:
+            partner_vals['country_id'] = country.id
+
+        partner = self.env['res.partner'].create(partner_vals)
+        _logger.info("✅ Cliente ML creado (buyer_id nuevo): %s (id=%s)", partner.name, partner.id)
         self.odoo_partner_id = partner.id
-        
         return partner
     
     @api.model
@@ -1420,12 +1540,24 @@ class MLSale(models.Model):
             ('company_id', '=', self.env.company.id)
         ], limit=1)
         if not pricelist:
-            pricelist = self.env.company.partner_id.property_product_pricelist
+            pricelist = self.env['product.pricelist'].search([], limit=1)
         
-        # Crear o buscar cliente
-        partner = self._get_or_create_customer()
+        # Crear o buscar cliente (respeta contexto ml_skip_contact_create desde import sin contacto)
+        allow_create = not self.env.context.get('ml_skip_contact_create', False)
+        partner = self._get_or_create_customer(allow_create=allow_create)
         if not partner:
-            raise UserError(_('No se pudo crear o encontrar el cliente para la venta de MercadoLibre'))
+            default_partner = self.ml_account_id.default_order_partner_id
+            if not default_partner:
+                raise UserError(_(
+                    'No se pudo crear/encontrar el cliente para la venta de MercadoLibre y '
+                    'la cuenta no tiene configurado un contacto por defecto.'
+                ))
+            partner = default_partner
+            self.odoo_partner_id = partner.id
+            _logger.warning(
+                "⚠️ Usando contacto por defecto en create_odoo_sale_order para ML Order ID %s: %s (ID: %s)",
+                self.ml_order_id, partner.name, partner.id
+            )
         
         pay_suffix = ''
         if self.ml_payment_terms_summary:
@@ -1531,7 +1663,7 @@ class MLSale(models.Model):
         # Crear orden de venta
         sale_order_vals = {
             'partner_id': partner.id,
-            'date_order': self.date_created or datetime.now(),
+            'date_order': self.date_created or fields.Datetime.now(),
             'pricelist_id': pricelist.id if pricelist else False,
             'order_line': order_lines,
             'origin': f'MercadoLibre #{self.ml_order_id}',

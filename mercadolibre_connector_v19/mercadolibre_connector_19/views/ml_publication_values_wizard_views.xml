@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_ml_publication_values_wizard_form" model="ir.ui.view">
+        <field name="name">ml.publication.values.wizard.form</field>
+        <field name="model">ml.publication.values.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Actualizar valores en Mercado Libre">
+                <group>
+                    <field name="publication_id" invisible="1"/>
+                    <field name="currency_id" invisible="1"/>
+                    <field name="title_ml"/>
+                    <field name="price"/>
+                    <field name="stock"/>
+                    <field name="sku"/>
+                </group>
+                <footer>
+                    <button name="action_apply" type="object" string="Actualizar" class="btn-primary"/>
+                    <button string="Cancelar" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>

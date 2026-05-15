@@ -7,13 +7,8 @@ class SaleOrder(models.Model):
     _inherit = 'sale.order'
 
     sale_origin = fields.Selection(
-        [
-            ('other', 'Otro'),
-            ('mercadolibre', 'Mercado Libre'),
-        ],
-        string='Origen',
-        default='other',
-        help='Indica de dónde proviene la orden de venta (ej. Mercado Libre). Permite filtrar y enlazar con la venta en el canal correspondiente.'
+        selection_add=[('mercadolibre', 'Mercado Libre')],
+        ondelete={'mercadolibre': 'set default'},
     )
     ml_sale_id = fields.Many2one(
         'ml.sale',

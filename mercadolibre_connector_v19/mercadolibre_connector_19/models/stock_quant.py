@@ -85,14 +85,15 @@ class StockQuant(models.Model):
         """
         # Guardar info previa (write puede venir con múltiples quants)
         prev_info = []
-        if 'quantity' in vals:
+        if 'quantity' in vals or 'reserved_quantity' in vals:
             for rec in self:
                 prev_info.append((rec.product_id.id, rec.location_id.id, rec.quantity or 0))
 
         result = super(StockQuant, self).write(vals)
         
-        # Verificar si se modificó la cantidad (stock)
-        if 'quantity' in vals:
+        # Stock disponible o reservado: _update_available_quantity / _update_reserved_quantity
+        # terminan en este write(); no duplicar sync también en esos hooks.
+        if 'quantity' in vals or 'reserved_quantity' in vals:
             # Log por cada quant afectado (sin spamear demasiado)
             for rec in self:
                 old_qty = None
@@ -125,17 +126,17 @@ class StockQuant(models.Model):
                         rec.product_id.id,
                         rec.location_id.id,
                         accounts=accounts,
-                        reason='quant.write(quantity)',
+                        reason='quant.write(quantity|reserved_quantity)',
                     )
         
         return result
     
-    @api.model
+    @api.model_create_multi
     def create(self, vals_list):
         """
         Sobrescribir create para sincronizar stock automáticamente a MercadoLibre cuando se crea en Odoo.
         """
-        result = super(StockQuant, self).create(vals_list)
+        result = super().create(vals_list)
         
         # Verificar si hay alguna cuenta con sincronización automática activada
         accounts = self._ml_get_auto_sync_accounts()
@@ -160,37 +161,27 @@ class StockQuant(models.Model):
     @api.model
     def _update_available_quantity(self, product_id, location_id, quantity=0.0, *args, **kwargs):
         """
-        Hook más confiable: Odoo lo usa cuando realmente impacta stock disponible (picking done, ajustes, etc.).
-        Esto cubre casos donde no pasa por write() directo en quants.
+        Odoo actualiza el quant vía write(); nuestro write() ya dispara la sync ML.
+        No llamar _ml_trigger_sync aquí para evitar dos PUT/ML por el mismo cambio.
         """
         _logger.info(
             "📌 Odoo _update_available_quantity: product_id=%s location_id=%s delta=%s kwargs=%s",
             product_id, location_id, quantity, {k: kwargs.get(k) for k in ('reserved_quantity', 'lot_id', 'package_id', 'owner_id', 'in_date') if k in kwargs}
         )
         # IMPORTANTE: Odoo cambia la firma entre versiones (ej: reserved_quantity). Aceptar kwargs evita romper el flujo.
-        res = super()._update_available_quantity(product_id, location_id, quantity, *args, **kwargs)
-        try:
-            self._ml_trigger_sync_for_product_location(product_id, location_id, reason='quant._update_available_quantity')
-        except Exception:
-            # ya loguea internamente
-            pass
-        return res
+        return super()._update_available_quantity(product_id, location_id, quantity, *args, **kwargs)
 
     @api.model
     def _update_reserved_quantity(self, product_id, location_id, quantity=0.0, *args, **kwargs):
         """
-        Hook para reservas (afecta virtual_available / expected). Útil si la cuenta usa stock esperado.
+        Igual que _update_available_quantity: el ajuste pasa por write() en quants;
+        la sync ML se dispara ahí (incl. reserved_quantity) para no duplicar.
         """
         _logger.info(
             "📌 Odoo _update_reserved_quantity: product_id=%s location_id=%s delta=%s kwargs=%s",
             product_id, location_id, quantity, {k: kwargs.get(k) for k in ('strict', 'lot_id', 'package_id', 'owner_id') if k in kwargs}
         )
-        res = super()._update_reserved_quantity(product_id, location_id, quantity, *args, **kwargs)
-        try:
-            self._ml_trigger_sync_for_product_location(product_id, location_id, reason='quant._update_reserved_quantity')
-        except Exception:
-            pass
-        return res
+        return super()._update_reserved_quantity(product_id, location_id, quantity, *args, **kwargs)
     
     @api.model
     def _sync_stock_to_mercadolibre(self, product_id, location_id=None, accounts=None):

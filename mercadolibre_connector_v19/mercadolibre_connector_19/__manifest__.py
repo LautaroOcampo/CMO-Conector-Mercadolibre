@@ -23,21 +23,25 @@ Integración con la API de Mercado Libre para:
     'website': "https://galarreta.co",
 
     'category': 'Sales',
-    'version': '0.1',
+    'version': '19.0.1.0.0',
 
-    'depends': ['base', 'product', 'sale', 'stock', 'account'],
+    'depends': ['base', 'mail', 'product', 'sale', 'sale_channel_origin', 'stock', 'account'],
 
     'data': [
+        'security/ml_security.xml',
         'security/ir.model.access.csv',
         'data/cron_data.xml',
         'views/ml_wizard_views.xml',
+        'views/ml_publication_values_wizard_views.xml',
+        'views/ml_sale_views.xml',
         'views/menu_views.xml',
         'views/ml_account_views.xml',
         'views/ml_test_user_views.xml',
         'views/product_template_views.xml',
+        'views/ml_sync_log_views.xml',
         'views/ml_publication.xml',
-        'views/ml_sale_views.xml',
         'views/ml_import_orders_wizard_views.xml',
+        'views/ml_webhook_notification_views.xml',
         'views/sale_order_views.xml',
     ],
 

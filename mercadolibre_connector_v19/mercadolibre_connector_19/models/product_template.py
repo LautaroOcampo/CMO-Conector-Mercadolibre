@@ -1,4 +1,4 @@
-from odoo import models, fields, api, _
+from odoo import models, fields, _
 from odoo.exceptions import UserError
 import requests
 import logging
@@ -92,10 +92,14 @@ class ProductTemplate(models.Model):
     
         return True
 
-    @api.onchange('qty_available')
-    def _onchange_stock_sync_meli(self):
-        """Actualizar stock en ML cuando cambia la cantidad disponible"""
-        for product in self:
-            for pub in product.ml_publication_ids.filtered(lambda p: p.ml_item_id and p.ml_account_id.access_token):
-                pub.stock = int(product.qty_available)
-                pub._update_meli_publication()
+    def write(self, vals):
+        res = super().write(vals)
+        if not self.env.context.get('ml_skip_price_sync'):
+            if {'list_price', 'standard_price'} & set(vals):
+                variants = self.mapped('product_variant_ids')
+                if variants:
+                    self.env['product.product']._ml_publication_sync_price_after_odoo_change(
+                        variants,
+                        reason='product.template.write',
+                    )
+        return res

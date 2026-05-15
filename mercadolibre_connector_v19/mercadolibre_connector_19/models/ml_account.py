@@ -1,5 +1,5 @@
 from odoo import models, fields, api, _
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError, ValidationError
 import logging
 import requests
 from datetime import datetime, timedelta
@@ -7,27 +7,77 @@ import base64
 import hashlib
 import os
 import json
+import secrets
 import time
-from odoo.http import request
 
 
 _logger = logging.getLogger(__name__)
 
+# OAuth: dominio de autorización según país (ISO 3166-1 alpha-2).
+# Fallback: https://auth.mercadolibre.com/authorization
+ML_AUTH_AUTHORIZATION_URL_BY_COUNTRY = {
+    'AR': 'https://auth.mercadolibre.com.ar/authorization',
+    'BR': 'https://auth.mercadolivre.com.br/authorization',
+    'MX': 'https://auth.mercadolibre.com.mx/authorization',
+    'CL': 'https://auth.mercadolibre.cl/authorization',
+    'CO': 'https://auth.mercadolibre.com.co/authorization',
+    'UY': 'https://auth.mercadolibre.com.uy/authorization',
+    'PE': 'https://auth.mercadolibre.com.pe/authorization',
+    'CR': 'https://auth.mercadolibre.co.cr/authorization',
+    'EC': 'https://auth.mercadolibre.com.ec/authorization',
+    'VE': 'https://auth.mercadolibre.com.ve/authorization',
+    'PA': 'https://auth.mercadolibre.com.pa/authorization',
+    'BO': 'https://auth.mercadolibre.com.bo/authorization',
+    'PY': 'https://auth.mercadolibre.com.py/authorization',
+    'DO': 'https://auth.mercadolibre.com.do/authorization',
+    'GT': 'https://auth.mercadolibre.com.gt/authorization',
+    'HN': 'https://auth.mercadolibre.com.hn/authorization',
+    'NI': 'https://auth.mercadolibre.com.ni/authorization',
+    'SV': 'https://auth.mercadolibre.com.sv/authorization',
+}
+
+# Site Mercado Libre por país (usuarios test). País sin entrada → MLA.
+ML_SITE_ID_BY_COUNTRY = {
+    'AR': 'MLA', 'BR': 'MLB', 'MX': 'MLM', 'CL': 'MLC', 'CO': 'MCO',
+    'UY': 'MLU', 'PE': 'MPE', 'VE': 'MLV', 'EC': 'MEC', 'PA': 'MPA',
+    'BO': 'MBO', 'PY': 'MPY', 'CR': 'MCR',
+}
+
+
 class MlAccount(models.Model):
     _name = "ml.account"
+    _inherit = ["mail.activity.mixin"]
     _description = "Mercado Libre Account"
     _rec_name = "name"
 
     name = fields.Char(string="Account Name", required=True)
     client_id = fields.Char(string="Client ID", required=True)
-    client_secret = fields.Char(string="Client Secret", required=True)
+    client_secret = fields.Char(
+        string="Client Secret",
+        required=True,
+        groups="mercadolibre_connector.group_ml_admin",
+    )
     redirect_uri = fields.Char(string="Redirect URI", required=True, default="/mercadolibre/oauth/callback")
-    country = fields.Char(string="Country", default="AR")
-    access_token = fields.Char(string="Access Token", copy=False)
-    refresh_token = fields.Char(string="Refresh Token", copy=False)
+    country_id = fields.Many2one(
+        'res.country',
+        string='País de la cuenta',
+        required=True,
+        default=lambda self: self._default_ml_account_country_id(),
+        help=(
+            'País del sitio Mercado Libre de esta cuenta. Define la URL de autorización OAuth '
+            'y el site_id usado en operaciones por país (p. ej. usuario test).'
+        ),
+    )
+    access_token = fields.Char(string="Access Token", copy=False, groups="mercadolibre_connector.group_ml_admin")
+    refresh_token = fields.Char(string="Refresh Token", copy=False, groups="mercadolibre_connector.group_ml_admin")
     token_expiration = fields.Datetime(string="Token Expiration")
     is_connected = fields.Boolean(string="Connected", default=False)
-    code_verifier = fields.Char(string="PKCE Verifier", copy=False)
+    code_verifier = fields.Char(string="PKCE Verifier", copy=False, groups="mercadolibre_connector.group_ml_admin")
+    oauth_state_token = fields.Char(
+        string='OAuth state (CSRF)',
+        copy=False,
+        help='Token de un solo uso para validar el parámetro state en el callback OAuth (anti-CSRF).',
+    )
     meli_user_id = fields.Char(
         string="ML User ID",
         copy=False,
@@ -79,6 +129,15 @@ class MlAccount(models.Model):
         domain=[('active', '=', True)],
         help='Producto a usar cuando no se pueda mapear una línea de venta de MercadoLibre por SKU/publicación.'
     )
+    default_order_partner_id = fields.Many2one(
+        'res.partner',
+        string='Contacto por Defecto (Órdenes sin cliente)',
+        domain="[('is_company', '=', False)]",
+        help=(
+            'Contacto que se usará al crear la orden de venta cuando el comprador de ML '
+            'no tenga datos mínimos para crear/matchear cliente.'
+        ),
+    )
     
     payment_journal_id = fields.Many2one(
         'account.journal',
@@ -97,7 +156,10 @@ class MlAccount(models.Model):
     auto_create_invoice = fields.Boolean(
         string='Crear Factura Automáticamente',
         default=True,
-        help='Si está activado, se creará y publicará la factura al importar la venta. No se registra el cobro automáticamente.'
+        help=(
+            'Si está activado, se creará y publicará la factura al importar la venta (sin cobro automático). '
+            'Si está desactivado, tampoco se creará ni actualizará el contacto del cliente en Odoo al importar ventas.'
+        ),
     )
     
     process_webhook_sales = fields.Boolean(
@@ -117,7 +179,21 @@ class MlAccount(models.Model):
         default=False,
         help='Si está activado, cualquier cambio de stock en Odoo actualizará automáticamente el stock en MercadoLibre. El stock se copia directamente (no se suma ni resta).'
     )
-    
+
+    sync_price_pricelist_id = fields.Many2one(
+        'product.pricelist',
+        string='Lista de precios (Mercado Libre)',
+        help='Precio que se enviará a Mercado Libre al sincronizar precios: según esta lista y el producto vinculado a cada publicación.',
+    )
+    auto_sync_price_on_odoo_change = fields.Boolean(
+        string='Sincronizar precio automáticamente',
+        default=False,
+        help=(
+            'Si está activado, al cambiar precios en Odoo (producto o ítems de la lista de precios elegida) '
+            'se actualiza el precio en Mercado Libre usando el precio de esa lista para la variante vinculada a cada publicación.'
+        ),
+    )
+
     timezone = fields.Selection(
         [
             ('America/Argentina/Buenos_Aires', 'Argentina (Buenos Aires)'),
@@ -133,14 +209,11 @@ class MlAccount(models.Model):
         string='Zona Horaria',
         default='America/Argentina/Buenos_Aires',
         required=True,
-        help='Zona horaria que se usará para convertir las fechas de las ventas de MercadoLibre.'
-    )
-    
-    # Campo deprecated - mantener por compatibilidad durante migración
-    auto_pause_by_stock = fields.Boolean(
-        string='Pausar Publicaciones por Stock (Deprecated)',
-        default=False,
-        help='DEPRECATED: Usar auto_pause_when_max_stock y auto_activate_when_min_stock en su lugar.'
+        help=(
+            'Zona horaria del mercado para las ventas importadas: interpreta fechas ISO sin zona '
+            'como hora local en este huso; las fechas con offset de ML se guardan en UTC de forma '
+            'coherente con Odoo.'
+        ),
     )
     
     auto_pause_when_max_stock = fields.Boolean(
@@ -180,42 +253,92 @@ class MlAccount(models.Model):
         compute='_compute_test_users_count',
         help='Cantidad de usuarios test guardados'
     )
+
+    sync_log_error_recent_count = fields.Integer(
+        string='Errores sync (30 días)',
+        compute='_compute_sync_log_error_recent_count',
+        help='Cantidad de registros ml.sync.log con error en los últimos 30 días.',
+    )
     
     @api.depends('test_user_ids')
     def _compute_test_users_count(self):
         for record in self:
             record.test_users_count = len(record.test_user_ids)
+
+    @api.constrains('auto_sync_price_on_odoo_change', 'sync_price_pricelist_id')
+    def _check_ml_auto_sync_price_pricelist(self):
+        for rec in self:
+            if rec.auto_sync_price_on_odoo_change and not rec.sync_price_pricelist_id:
+                raise ValidationError(
+                    _('Debe elegir una lista de precios para activar la sincronización automática de precios a Mercado Libre.')
+                )
+
+    # No usar @api.depends('id'): Odoo 19+ lo rechaza. El valor se invalida al crear ml.sync.log.
+    @api.depends('name')
+    def _compute_sync_log_error_recent_count(self):
+        Log = self.env['ml.sync.log'].sudo()
+        threshold = fields.Datetime.now() - timedelta(days=30)
+        for rec in self:
+            rec.sync_log_error_recent_count = Log.search_count([
+                ('ml_account_id', '=', rec.id),
+                ('result', '=', 'error'),
+                ('create_date', '>=', threshold),
+            ])
     # =====================================================
     # FIN SECCIÓN TEMPORAL
     # =====================================================
 
+    @api.model
+    def _default_ml_account_country_id(self):
+        return self.env.ref('base.ar', raise_if_not_found=False) or self.env['res.country'].search(
+            [('code', '=', 'AR')], limit=1
+        )
 
+    def _mercadolibre_auth_authorization_base_url(self):
+        """URL base de OAuth (…/authorization) según `country_id`."""
+        self.ensure_one()
+        code = (self.country_id.code or 'AR').upper()
+        return ML_AUTH_AUTHORIZATION_URL_BY_COUNTRY.get(
+            code, 'https://auth.mercadolibre.com/authorization'
+        )
 
-    def get_authorize_url(self):
-        """Return Mercado Libre authorize URL with PKCE (OAuth 2.0)."""
+    def _mercadolibre_site_id(self):
+        """Site_id de Mercado Libre (MLA, MLB, …) según `country_id`."""
+        self.ensure_one()
+        code = (self.country_id.code or 'AR').upper()
+        return ML_SITE_ID_BY_COUNTRY.get(code, 'MLA')
+
+    def _ml_build_oauth_authorization_url(self):
+        """Genera PKCE + state OAuth, los persiste en la cuenta y devuelve (url_ml, verifier, oauth_state)."""
+        self.ensure_one()
         verifier = base64.urlsafe_b64encode(os.urandom(40)).decode('utf-8').rstrip('=')
-        self.code_verifier = verifier
-        self.sudo().write({'code_verifier': verifier})  # ✅ fuerza guardado inmediato
-    
-        # Crear el code_challenge usando SHA256 del verifier
+        oauth_state = secrets.token_urlsafe(32)
+        self.sudo().write({
+            'code_verifier': verifier,
+            'oauth_state_token': oauth_state,
+        })
         challenge = base64.urlsafe_b64encode(
             hashlib.sha256(verifier.encode('utf-8')).digest()
         ).decode('utf-8').rstrip('=')
-    
-        base = (
-            "https://auth.mercadolibre.com.ar/authorization"
-            if self.country in ('AR', 'ARG', 'Argentina')
-            else "https://auth.mercadolibre.com/authorization"
-        )
+        base = self._mercadolibre_auth_authorization_base_url()
         params = {
-            "response_type": "code",
-            "client_id": self.client_id,
-            "redirect_uri": self.redirect_uri,
-            "code_challenge": challenge,
-            "code_challenge_method": "S256",
+            'response_type': 'code',
+            'client_id': self.client_id,
+            'redirect_uri': self.redirect_uri,
+            'code_challenge': challenge,
+            'code_challenge_method': 'S256',
+            'state': oauth_state,
         }
-        qs = "&".join([f"{k}={requests.utils.requote_uri(v)}" for k, v in params.items()])
-        return f"{base}?{qs}"
+        qs = '&'.join(
+            f'{k}={requests.utils.requote_uri(str(v))}' for k, v in params.items()
+        )
+        full_url = f'{base}?{qs}'
+        return full_url, verifier, oauth_state
+
+    def get_authorize_url(self):
+        """Return Mercado Libre authorize URL with PKCE (OAuth 2.0)."""
+        url, _verifier, _state = self._ml_build_oauth_authorization_url()
+        return url
 
 
 
@@ -597,30 +720,23 @@ class MlAccount(models.Model):
 
     def action_open_authorize(self):
         self.ensure_one()
-    
-        # Generar y guardar el verifier
-        verifier = base64.urlsafe_b64encode(os.urandom(40)).decode('utf-8').rstrip('=')
-        self.sudo().write({'code_verifier': verifier})
-        request.session['ml_account_id'] = self.id
-        request.session['ml_code_verifier'] = verifier  # ✅ guardar en sesión
-    
-        # Crear challenge
-        challenge = base64.urlsafe_b64encode(
-            hashlib.sha256(verifier.encode('utf-8')).digest()
-        ).decode('utf-8').rstrip('=')
-    
-        base = "https://auth.mercadolibre.com.ar/authorization"
-        params = {
-            "response_type": "code",
-            "client_id": self.client_id,
-            "redirect_uri": self.redirect_uri,
-            "code_challenge": challenge,
-            "code_challenge_method": "S256",
-        }
-        qs = "&".join([f"{k}={requests.utils.requote_uri(v)}" for k, v in params.items()])
+        web_base = (
+            self.env['ir.config_parameter']
+            .sudo()
+            .get_param('web.base.url', '')
+            .rstrip('/')
+        )
+        if not web_base:
+            raise UserError(
+                _(
+                    'Configure el parámetro del sistema "web.base.url" con la URL pública '
+                    'de este Odoo (necesario para abrir el flujo OAuth de Mercado Libre).'
+                )
+            )
+        path = f'/mercadolibre/oauth/start?account_id={self.id}'
         return {
             'type': 'ir.actions.act_url',
-            'url': f"{base}?{qs}",
+            'url': f'{web_base}{path}',
             'target': 'new',
         }
 
@@ -656,13 +772,7 @@ class MlAccount(models.Model):
                 "Content-Type": "application/json",
             }
             
-            # Payload para crear usuario test
-            # site_id: MLA (Argentina), MLB (Brasil), etc.
-            site_id = "MLA"  # Por defecto Argentina, se puede hacer dinámico según country
-            if self.country and self.country.upper() in ('BR', 'BRA', 'BRASIL'):
-                site_id = "MLB"
-            elif self.country and self.country.upper() in ('MX', 'MEX', 'MEXICO'):
-                site_id = "MLM"
+            site_id = self._mercadolibre_site_id()
             
             payload = {
                 "site_id": site_id
@@ -1341,7 +1451,24 @@ class MlAccount(models.Model):
         except Exception as e:
             _logger.error("❌ Error inesperado importando publicaciones: %s", str(e), exc_info=True)
             raise UserError(_('Error inesperado al importar publicaciones:\n\n%s') % str(e))
-    
+
+    def action_view_sync_log_errors(self):
+        """Abre lista de errores de sync ML recientes (30 días) para esta cuenta."""
+        self.ensure_one()
+        threshold = fields.Datetime.now() - timedelta(days=30)
+        return {
+            'type': 'ir.actions.act_window',
+            'name': _('Errores de sincronización ML (30 días)'),
+            'res_model': 'ml.sync.log',
+            'view_mode': 'list,form',
+            'domain': [
+                ('ml_account_id', '=', self.id),
+                ('result', '=', 'error'),
+                ('create_date', '>=', threshold),
+            ],
+            'context': {'default_ml_account_id': self.id},
+        }
+
     def action_open_import_orders_wizard(self):
         """Abre el wizard para importar órdenes con opciones"""
         self.ensure_one()
@@ -1399,30 +1526,52 @@ class MlAccount(models.Model):
         updated_count = 0
         error_count = 0
         errors = []
-        
-        for publication in publications:
+        total = len(publications)
+
+        for idx, publication in enumerate(publications, start=1):
+            pct = (100.0 * idx / total) if total else 100.0
             try:
-                _logger.info("🔄 Actualizando stock de publicación: %s (ML Item ID: %s)", publication.name, publication.ml_item_id)
-                
+                _logger.info(
+                    "🔄 Progreso stock ML: %d/%d (%.1f%%) — %s (item %s)",
+                    idx,
+                    total,
+                    pct,
+                    publication.name,
+                    publication.ml_item_id or "",
+                )
+
                 # Usar la misma lógica que _compute_stock: variante seleccionada, almacén, tipo disponible/esperado, kits
                 publication.invalidate_recordset(['stock'])
                 publication._compute_stock()
                 stock = max(0, int(publication.stock or 0))
-                
-                _logger.info("📦 Stock a replicar en ML: %d", stock)
-                
+
                 # Actualizar solo stock en Mercado Libre
                 publication._force_update_stock_in_ml(stock_value=stock)
-                
+
                 updated_count += 1
-                _logger.info("✅ Stock replicado: %s (stock=%d)", publication.name, stock)
-                
+                _logger.info(
+                    "✅ [%d/%d] (%.1f%%) Stock replicado en ML: %s (stock=%d)",
+                    idx,
+                    total,
+                    pct,
+                    publication.name,
+                    stock,
+                )
+
             except Exception as e:
                 error_count += 1
                 error_msg = _('Error actualizando stock de publicación %s: %s') % (publication.ml_item_id or publication.name, str(e))
                 errors.append(error_msg)
-                _logger.exception("❌ %s", error_msg)
-                continue
+                _logger.exception(
+                    "❌ [%d/%d] (%.1f%%) %s",
+                    idx,
+                    total,
+                    pct,
+                    error_msg,
+                )
+            finally:
+                if idx < total:
+                    time.sleep(0.1)
         
         _logger.info("=" * 80)
         _logger.info("✅ FIN: Actualización masiva de stock completada")
@@ -1502,8 +1651,22 @@ class MlAccount(models.Model):
                 _logger.info("🔄 Actualizando publicación: %s (ML Item ID: %s)", publication.name, publication.ml_item_id)
                 
                 # Calcular precio y stock desde el producto relacionado
-                product = publication.product_variant_id or publication.product_tmpl_id.product_variant_id or publication.product_tmpl_id
-                price = getattr(product, 'list_price', None) or publication.product_tmpl_id.list_price
+                variant = publication.product_variant_id or publication.product_tmpl_id.product_variant_id
+                product = variant or publication.product_tmpl_id
+                if self.sync_price_pricelist_id:
+                    if not variant:
+                        _logger.warning(
+                            '⚠️ Publicación %s sin variante de producto; no se puede leer lista de precios, omitiendo',
+                            publication.name,
+                        )
+                        continue
+                    try:
+                        price = self.sync_price_pricelist_id._get_product_price(variant, 1.0)
+                    except TypeError:
+                        price = self.sync_price_pricelist_id._get_product_price(variant.product_tmpl_id, 1.0)
+                    price = float(price or 0)
+                else:
+                    price = getattr(product, 'list_price', None) or publication.product_tmpl_id.list_price
                 
                 # Calcular stock (considerando kits)
                 # Usar el método _compute_stock de la publicación que ya maneja kits

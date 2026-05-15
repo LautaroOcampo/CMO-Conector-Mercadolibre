@@ -6,6 +6,9 @@ import base64
 import logging
 import time
 import json
+from collections import defaultdict
+
+from odoo.osv.expression import AND, OR
 
 
 _logger = logging.getLogger(__name__)
@@ -51,7 +54,7 @@ class MLPublication(models.Model):
         ('inactive', 'Inactiva'),
         ('not_yet_active', 'Pendiente de activación'),
         ('payment_required', 'Pago requerido'),
-    ], string="Estado", default=False)
+    ], string="Estado en Mercado Libre", default=False)
     permalink = fields.Char(string="Enlace a ML")
     
     state = fields.Char(
@@ -74,6 +77,12 @@ class MLPublication(models.Model):
         required=True
     )
 
+    sync_log_ids = fields.One2many(
+        'ml.sync.log',
+        'publication_id',
+        string='Historial de sincronización ML',
+        readonly=True,
+    )
     ml_listing_type = fields.Selection([
         ('gold_special', 'Premium'),
         ('gold_pro', 'Pro'),
@@ -392,160 +401,289 @@ class MLPublication(models.Model):
     # =====================================================
     # 🔹 COMPUTE FIELDS
     # =====================================================
-    @api.depends("product_tmpl_id", "product_variant_id", "ml_account_id.warehouse_id", "ml_account_id.stock_type", "product_tmpl_id.qty_available", "product_tmpl_id.virtual_available", "product_tmpl_id.product_variant_ids", "current_stock_ml", "ml_variation_id")
+    @api.depends(
+        "product_tmpl_id",
+        "product_variant_id",
+        "product_variant_id.qty_available",
+        "product_variant_id.virtual_available",
+        "ml_account_id.warehouse_id",
+        "ml_account_id.stock_type",
+        "product_tmpl_id.qty_available",
+        "product_tmpl_id.virtual_available",
+        "product_tmpl_id.product_variant_ids",
+        "current_stock_ml",
+        "ml_variation_id",
+    )
     def _compute_stock(self):
-        for pub in self:
+        """Stock en Odoo por publicación. Optimizado: BOM en batch + agregación de stock.quant (sin N+1)."""
+        pubs_with_tmpl = self.filtered(lambda p: p.product_tmpl_id)
+        for pub in self - pubs_with_tmpl:
+            pub.stock = int(pub.current_stock_ml or 0)
+
+        if not pubs_with_tmpl:
+            return
+
+        accounts = pubs_with_tmpl.mapped('ml_account_id')
+        warehouses = accounts.mapped('warehouse_id').filtered(lambda w: w)
+        lot_stock_locs = warehouses.mapped('lot_stock_id').filtered(lambda l: l)
+
+        tmpl_ids = list(set(pubs_with_tmpl.mapped('product_tmpl_id').ids))
+        tmpls = self.env['product.template'].browse(tmpl_ids)
+        tmpl_default_variant = {t.id: t.product_variant_id.id for t in tmpls}
+
+        variant_by_pub = {}
+        variant_ids = set()
+        for pub in pubs_with_tmpl:
+            vid = pub.product_variant_id.id or tmpl_default_variant.get(pub.product_tmpl_id.id)
+            if vid:
+                variant_by_pub[pub.id] = vid
+                variant_ids.add(vid)
+
+        products_for_bom = self.env['product.product'].browse(list(variant_ids))
+        kit_lines_by_variant = self._get_kit_components_from_bom_batch(products_for_bom)
+
+        component_ids = set()
+        for lines in kit_lines_by_variant.values():
+            for line in lines:
+                if line.product_id:
+                    component_ids.add(line.product_id.id)
+
+        all_product_ids = set(variant_ids) | component_ids
+        if not all_product_ids:
+            for pub in pubs_with_tmpl:
+                pub.stock = 0
+            return
+
+        loc_domain_branches = [[('location_id.usage', '=', 'internal')]]
+        for loc in lot_stock_locs:
+            loc_domain_branches.append([('location_id', 'child_of', loc.id)])
+        loc_domain = loc_domain_branches[0] if len(loc_domain_branches) == 1 else OR(loc_domain_branches)
+
+        qty_internal, qty_by_wh_lot = self._ml_stock_aggregate_quantities(
+            list(all_product_ids), loc_domain, lot_stock_locs
+        )
+
+        virt_by_loc_product = {}
+        pubs_expected = [p for p in pubs_with_tmpl if (p.ml_account_id.stock_type if p.ml_account_id else 'available') == 'expected']
+        if pubs_expected:
+            virt_needed = defaultdict(set)
+            for pub in pubs_expected:
+                wh = pub.ml_account_id.warehouse_id if pub.ml_account_id else None
+                lot = wh.lot_stock_id if wh else None
+                loc_key = lot.id if lot else False
+                vid = variant_by_pub.get(pub.id)
+                if vid:
+                    virt_needed[loc_key].add(vid)
+                    for line in kit_lines_by_variant.get(vid, ()):
+                        if line.product_id:
+                            virt_needed[loc_key].add(line.product_id.id)
+            Product = self.env['product.product']
+            for loc_key, pids in virt_needed.items():
+                if not pids:
+                    continue
+                prods = Product.browse(list(pids))
+                ctx = {'location': loc_key} if loc_key else {}
+                for row in prods.with_context(**ctx).read(['virtual_available']):
+                    virt_by_loc_product[(loc_key, row['id'])] = row['virtual_available'] or 0.0
+
+        def _qty_available_for_product(product_id, lot_root):
+            if lot_root:
+                return float(qty_by_wh_lot.get((lot_root.id, product_id), 0.0))
+            return float(qty_internal.get(product_id, 0.0))
+
+        def _qty_expected_for_product(product_id, loc_key):
+            return float(virt_by_loc_product.get((loc_key, product_id), 0.0))
+
+        products_cached = self.env['product.product'].browse(list(all_product_ids))
+
+        for pub in pubs_with_tmpl:
             try:
-                if pub.product_tmpl_id:
-                    # Variante a usar: la seleccionada o la única del producto
-                    product_variant = pub.product_variant_id or pub.product_tmpl_id.product_variant_id
-                    stock_type = pub.ml_account_id.stock_type if pub.ml_account_id else 'available'
-                    use_expected = (stock_type == 'expected')
-                    if product_variant:
-                        qty_available = product_variant.qty_available or 0
-                        virtual_available = product_variant.virtual_available or 0
-                        _logger.info("🔍 [DEBUG] Producto: %s | qty_available=%s | virtual_available=%s | stock_type=%s", 
-                                   pub.product_tmpl_id.name, qty_available, virtual_available, stock_type)
-                    
-                    # Verificar si el producto es un kit (tiene BOM de tipo phantom)
-                    bom_components = pub._get_kit_components_from_bom(product_variant) if product_variant else []
-                    
-                    if bom_components:
-                        # Es un kit: calcular stock basándose en los componentes disponibles
-                        _logger.info("📦 Kit detectado al calcular stock: '%s' tiene %d componentes (tipo: %s)", 
-                                   pub.product_tmpl_id.name, len(bom_components), stock_type)
-                        
-                        # Calcular stock basándose en los componentes
-                        # El stock del kit es el mínimo stock disponible de los componentes dividido por la cantidad necesaria de cada uno
-                        kit_stock = float('inf')
-                        
-                        if pub.ml_account_id and pub.ml_account_id.warehouse_id:
-                            warehouse = pub.ml_account_id.warehouse_id
-                            for bom_line in bom_components:
-                                comp_product = bom_line.product_id
-                                if not comp_product:
-                                    continue
-                                
-                                # Obtener stock del componente según el tipo configurado
-                                if use_expected:
-                                    # Stock esperado: usar virtual_available del componente
-                                    comp_stock = int(comp_product.virtual_available or 0)
-                                else:
-                                    # Stock disponible: usar quants del almacén
-                                    comp_stock_quants = self.env['stock.quant'].search([
-                                        ('product_id', '=', comp_product.id),
-                                        ('location_id', 'child_of', warehouse.lot_stock_id.id)
-                                    ])
-                                    comp_stock = int(sum(comp_stock_quants.mapped('quantity'))) if comp_stock_quants else 0
-                                
-                                # Calcular cuántos kits se pueden armar con este componente
-                                if bom_line.product_qty > 0:
-                                    kits_posibles = int(comp_stock / bom_line.product_qty)
-                                    kit_stock = min(kit_stock, kits_posibles)
-                                    _logger.info("   Componente '%s': stock=%d (%s), cantidad_necesaria=%.2f, kits_posibles=%d", 
-                                               comp_product.name, comp_stock, stock_type, bom_line.product_qty, kits_posibles)
+                stock_type = pub.ml_account_id.stock_type if pub.ml_account_id else 'available'
+                use_expected = stock_type == 'expected'
+                vid = variant_by_pub.get(pub.id)
+                if not vid:
+                    pub.stock = 0
+                    continue
+                product_variant = products_cached.browse(vid)
+                wh = pub.ml_account_id.warehouse_id if pub.ml_account_id else None
+                lot_root = wh.lot_stock_id if wh else None
+                loc_key = lot_root.id if lot_root else False
+
+                bom_components = kit_lines_by_variant.get(vid, ())
+
+                if bom_components:
+                    _logger.debug(
+                        "📦 Kit al calcular stock: '%s' (%d componentes, %s)",
+                        pub.product_tmpl_id.name,
+                        len(bom_components),
+                        stock_type,
+                    )
+                    kit_stock = float('inf')
+                    for bom_line in bom_components:
+                        comp_product = bom_line.product_id
+                        if not comp_product:
+                            continue
+                        if use_expected:
+                            comp_stock = int(_qty_expected_for_product(comp_product.id, loc_key))
                         else:
-                            # Sin warehouse, usar stock del componente según tipo configurado
-                            for bom_line in bom_components:
-                                comp_product = bom_line.product_id
-                                if not comp_product:
-                                    continue
-                                
-                                if use_expected:
-                                    comp_stock = int(comp_product.virtual_available or 0)
-                                else:
-                                    comp_stock = int(comp_product.qty_available or 0)
-                                
-                                if bom_line.product_qty > 0:
-                                    kits_posibles = int(comp_stock / bom_line.product_qty)
-                                    kit_stock = min(kit_stock, kits_posibles)
-                        
-                        # Si no se calculó stock válido, usar 0
-                        if kit_stock == float('inf'):
-                            pub.stock = 0
-                        else:
-                            pub.stock = max(0, int(kit_stock))  # Asegurar que no sea negativo
-                        
-                        _logger.info("📦 Stock del kit calculado: %d kits (%s)", pub.stock, stock_type)
-                    else:
-                        # Producto normal (no kit)
-                        # Si hay warehouse configurado en la cuenta, usar ese
-                        if pub.ml_account_id and pub.ml_account_id.warehouse_id:
-                            warehouse = pub.ml_account_id.warehouse_id
-                            product_variant = pub.product_variant_id or pub.product_tmpl_id.product_variant_id
-                            if product_variant:
-                                if use_expected:
-                                    # Stock esperado: usar virtual_available del producto
-                                    virtual_stock = int(product_variant.virtual_available or 0)
-                                    pub.stock = max(0, virtual_stock)
-                                    _logger.info("🔍 [DEBUG] Stock esperado (virtual_available): %d → %d", virtual_stock, pub.stock)
-                                else:
-                                    # Stock disponible: usar quants del almacén
-                                    stock_quants = self.env['stock.quant'].search([
-                                        ('product_id', '=', product_variant.id),
-                                        ('location_id', 'child_of', warehouse.lot_stock_id.id)
-                                    ])
-                                    stock_sum = int(sum(stock_quants.mapped('quantity'))) if stock_quants else 0
-                                    pub.stock = max(0, stock_sum)  # Asegurar que no sea negativo
-                                    _logger.info("🔍 [DEBUG] Stock disponible (quants): cantidad_quants=%d, stock_sum=%d → %d", 
-                                               len(stock_quants), stock_sum, pub.stock)
-                                    if stock_quants:
-                                        for q in stock_quants:
-                                            _logger.info("   Quant: location=%s, quantity=%s", q.location_id.name, q.quantity)
-                            else:
-                                pub.stock = 0
-                        else:
-                            # Fallback: usar stock del producto según tipo configurado
-                            product_variant = pub.product_variant_id or pub.product_tmpl_id.product_variant_id
-                            if use_expected:
-                                virtual_stock = int((product_variant or pub.product_tmpl_id).virtual_available or 0)
-                                pub.stock = max(0, virtual_stock)
-                                _logger.info("🔍 [DEBUG] Stock esperado (sin warehouse): %d → %d", virtual_stock, pub.stock)
-                            else:
-                                qty_stock = int((product_variant or pub.product_tmpl_id).qty_available or 0)
-                                pub.stock = max(0, qty_stock)
-                                _logger.info("🔍 [DEBUG] Stock disponible (sin warehouse): %d → %d", qty_stock, pub.stock)
+                            comp_stock = int(_qty_available_for_product(comp_product.id, lot_root))
+                        if bom_line.product_qty > 0:
+                            kits_posibles = int(comp_stock / bom_line.product_qty)
+                            kit_stock = min(kit_stock, kits_posibles)
+                            _logger.debug(
+                                "   Componente '%s': stock=%d (%s), qty_bom=%.2f, kits=%d",
+                                comp_product.name,
+                                comp_stock,
+                                stock_type,
+                                bom_line.product_qty,
+                                kits_posibles,
+                            )
+                    pub.stock = 0 if kit_stock == float('inf') else max(0, int(kit_stock))
+                    _logger.debug("📦 Stock del kit: %d (%s)", pub.stock, stock_type)
                 else:
-                    # Publicación por variación sin producto: usar stock actual de ML
-                    pub.stock = int(pub.current_stock_ml or 0)
+                    if use_expected:
+                        virtual_stock = int(_qty_expected_for_product(product_variant.id, loc_key))
+                        pub.stock = max(0, virtual_stock)
+                        _logger.debug(
+                            "🔍 Stock esperado (virtual_available, loc=%s): %d → %d",
+                            loc_key,
+                            virtual_stock,
+                            pub.stock,
+                        )
+                    else:
+                        stock_sum = int(_qty_available_for_product(product_variant.id, lot_root))
+                        pub.stock = max(0, stock_sum)
+                        _logger.debug(
+                            "🔍 Stock disponible (quants agregados, almacén=%s): %d",
+                            lot_root.name if lot_root else '—',
+                            pub.stock,
+                        )
             except Exception as e:
                 _logger.warning("⚠️ Error calculando stock para publicación %s: %s", pub.id, e)
                 pub.stock = 0
-    
+
+    def _ml_stock_aggregate_quantities(self, product_ids, loc_domain, lot_stock_locs):
+        """Un read_group sobre stock.quant: cantidades por producto (interno global y por ubicación de almacén)."""
+        qty_internal = defaultdict(float)
+        qty_by_wh_lot = defaultdict(float)
+        if not product_ids:
+            return qty_internal, qty_by_wh_lot
+
+        Quant = self.env['stock.quant']
+        domain = AND([[('product_id', 'in', product_ids)], loc_domain])
+        groups = Quant.read_group(domain, ['quantity:sum'], ['product_id', 'location_id'], lazy=False)
+
+        root_paths = {loc.id: (loc.parent_path or '') for loc in lot_stock_locs}
+
+        loc_ids = set()
+        for row in groups:
+            loc_tuple = row.get('location_id')
+            if loc_tuple and loc_tuple[0]:
+                loc_ids.add(loc_tuple[0])
+        loc_meta = {}
+        if loc_ids:
+            for loc in self.env['stock.location'].browse(list(loc_ids)):
+                loc_meta[loc.id] = {
+                    'path': loc.parent_path or '',
+                    'usage': loc.usage,
+                }
+
+        def _best_root_for_location(loc_id):
+            if loc_id in root_paths:
+                return loc_id
+            path = loc_meta.get(loc_id, {}).get('path', '')
+            if not path:
+                return None
+            best_rid = None
+            best_len = -1
+            for rid, rpath in root_paths.items():
+                if rpath and path.startswith(rpath) and len(rpath) > best_len:
+                    best_len = len(rpath)
+                    best_rid = rid
+            return best_rid
+
+        for row in groups:
+            pid_tuple = row.get('product_id')
+            if not pid_tuple or not pid_tuple[0]:
+                continue
+            pid = pid_tuple[0]
+            loc_tuple = row.get('location_id')
+            loc_id = loc_tuple[0] if loc_tuple else None
+            qty = row.get('quantity_sum')
+            if qty is None:
+                qty = row.get('quantity', 0) or 0
+
+            meta = loc_meta.get(loc_id) if loc_id else None
+            if meta and meta.get('usage') == 'internal':
+                qty_internal[pid] += qty
+
+            rid = _best_root_for_location(loc_id) if loc_id else None
+            if rid is not None:
+                qty_by_wh_lot[(rid, pid)] += qty
+
+        return qty_internal, qty_by_wh_lot
+
+    def _get_kit_components_from_bom_batch(self, products):
+        """Una búsqueda de BOM phantom para varios product.product; devuelve {variant_id: bom_line recordset}."""
+        if not products or 'mrp.bom' not in self.env:
+            return {}
+        products = products.filtered(lambda p: p)
+        if not products:
+            return {}
+
+        company = self.env.company
+        variant_ids = products.ids
+        tmpl_ids = list(set(products.mapped('product_tmpl_id').ids))
+        Bom = self.env['mrp.bom']
+        domain = AND([
+            [('type', '=', 'phantom'), ('company_id', 'in', [False, company.id])],
+            [
+                '|',
+                ('product_id', 'in', variant_ids),
+                '&',
+                ('product_id', '=', False),
+                ('product_tmpl_id', 'in', tmpl_ids),
+            ],
+        ])
+        boms = Bom.search(domain, order='sequence, id')
+
+        bom_by_pid = defaultdict(list)
+        bom_by_tmpl = defaultdict(list)
+        for bom in boms:
+            if bom.product_id:
+                bom_by_pid[bom.product_id.id].append(bom)
+            elif bom.product_tmpl_id:
+                bom_by_tmpl[bom.product_tmpl_id.id].append(bom)
+
+        result = {}
+        for p in products:
+            chosen = None
+            if bom_by_pid.get(p.id):
+                chosen = bom_by_pid[p.id][0]
+            elif bom_by_tmpl.get(p.product_tmpl_id.id):
+                chosen = bom_by_tmpl[p.product_tmpl_id.id][0]
+            if chosen:
+                result[p.id] = chosen.bom_line_ids
+        return result
+
     def _get_kit_components_from_bom(self, product):
         """
         Obtiene los componentes de un kit desde el BOM (Bill of Materials) de Odoo.
-        
+
         Args:
             product: product.product - Producto a verificar si es kit
-        
+
         Returns:
-            list: Lista de líneas de BOM (mrp.bom.line) si el producto tiene BOM phantom, sino lista vacía
+            recordset o lista vacía de líneas BOM (mrp.bom.line) si aplica.
         """
         try:
-            # Verificar si el módulo mrp está instalado
-            if 'mrp.bom' not in self.env:
+            if not product or 'mrp.bom' not in self.env:
                 return []
-            
-            # Buscar BOM de tipo phantom para este producto
-            bom = self.env['mrp.bom'].search([
-                ('product_id', '=', product.id),
-                ('type', '=', 'phantom'),
-                ('company_id', 'in', [False, self.env.company.id])
-            ], limit=1)
-            
-            # Si no se encuentra por product_id, buscar por product_tmpl_id
-            if not bom and product.product_tmpl_id:
-                bom = self.env['mrp.bom'].search([
-                    ('product_tmpl_id', '=', product.product_tmpl_id.id),
-                    ('type', '=', 'phantom'),
-                    ('company_id', 'in', [False, self.env.company.id])
-                ], limit=1)
-            
-            if bom:
-                return bom.bom_line_ids
-            else:
-                return []
+            batch = self._get_kit_components_from_bom_batch(product)
+            lines = batch.get(product.id)
+            if lines:
+                return lines
+            return []
         except Exception as e:
             _logger.warning("⚠️ Error verificando BOM para producto %s: %s", product.name, str(e))
             return []
@@ -3865,11 +4003,6 @@ class MLPublication(models.Model):
 
         return last_response
 
-    @api.onchange('price', 'stock')
-    def _onchange_price_or_stock(self):
-        if self.ml_item_id and self.ml_account_id and self.ml_account_id.access_token:
-            self._update_meli_publication()
-
     def _update_meli_publication(self):
         """Actualiza la publicación en Mercado Libre desde un webhook.
         No actualiza price ni available_quantity si el item está activo."""
@@ -4680,103 +4813,263 @@ class MLPublication(models.Model):
             _logger.warning("Error obteniendo variaciones ML: %s", e)
             return []
 
-    def action_update_price_from_product(self):
-        """
-        Envía a MercadoLibre el valor de 'Precio a enviar a ML' (new_price_ml).
-        """
-        self.ensure_one()
-        
-        if not self.product_tmpl_id:
-            raise UserError(_("No hay producto relacionado para actualizar el precio."))
-        
-        if not self.ml_item_id:
-            raise UserError(_("Esta publicación no está publicada en MercadoLibre. Publique primero la publicación."))
-        
-        if not self.ml_account_id or not self.ml_account_id.access_token:
-            raise UserError(_("La cuenta de MercadoLibre no está conectada. Autorice la cuenta primero."))
-        
-        self.ml_account_id._ensure_valid_token()
-
-        price_send = float(self.new_price_ml or 0)
-        if price_send <= 0:
-            raise UserError(_("Indique un precio válido en 'Precio a enviar a ML'."))
-
+    def _ml_item_put_error_message(self, response):
+        text = (response.text or "").strip()
         try:
-            self._force_update_price_in_ml(price_value=price_send)
-            _logger.info("✅ Precio sincronizado con MercadoLibre: %.2f", price_send)
+            err = response.json()
+            if isinstance(err, dict):
+                return err.get("message") or err.get("error") or text or str(response.status_code)
+        except Exception:
+            pass
+        return text or _("HTTP %s") % response.status_code
+
+    def _fetch_ml_item_variations_for_put(self):
+        """Estado de variaciones para armar PUT (subrecurso o ítem completo)."""
+        self.ensure_one()
+        variations = self._get_ml_variations_current()
+        if variations:
+            return variations
+        if not self.ml_item_id or not self.ml_account_id or not self.ml_account_id.access_token:
+            return []
+        self.ml_account_id._ensure_valid_token()
+        url = f"https://api.mercadolibre.com/items/{self.ml_item_id}"
+        headers = {"Authorization": f"Bearer {self.ml_account_id.access_token}"}
+        try:
+            r = requests.get(url, headers=headers, timeout=20)
+            if not r.ok:
+                return []
+            data = r.json() if r.text else {}
+            return data.get("variations") or []
+        except Exception as e:
+            _logger.warning("Error obteniendo variaciones desde ítem ML: %s", e)
+            return []
+
+    def _force_update_title_in_ml(self, title_ml):
+        """PUT solo título en el ítem ML."""
+        self.ensure_one()
+        if not self.ml_item_id or not self.ml_account_id or not self.ml_account_id.access_token:
+            raise UserError(_("Falta ítem en Mercado Libre o la cuenta no tiene token válido."))
+        self.ml_account_id._ensure_valid_token()
+        title_ml = (title_ml or "").strip()
+        if not title_ml:
+            raise UserError(_("El título no puede estar vacío."))
+        url = f"https://api.mercadolibre.com/items/{self.ml_item_id}"
+        headers = {
+            "Authorization": f"Bearer {self.ml_account_id.access_token}",
+            "Content-Type": "application/json",
+        }
+        old_title = (self.title or "").strip()
+        start = time.time()
+        try:
+            response = requests.put(url, headers=headers, json={"title": title_ml}, timeout=30)
+            duration_ms = int((time.time() - start) * 1000)
+            http_status = response.status_code
+            if response.status_code in (200, 201):
+                self.env["ml.sync.log"]._log_sync(
+                    account=self.ml_account_id,
+                    operation="item_update",
+                    result="ok",
+                    publication_id=self,
+                    value_before=old_title,
+                    value_after=title_ml,
+                    http_status=http_status,
+                    duration_ms=duration_ms,
+                    trigger="manual",
+                )
+                return True
+            err = self._ml_item_put_error_message(response)
+            self.env["ml.sync.log"]._log_sync(
+                account=self.ml_account_id,
+                operation="item_update",
+                result="error",
+                publication_id=self,
+                value_before=old_title,
+                value_after=title_ml,
+                http_status=http_status,
+                error_message=err,
+                duration_ms=duration_ms,
+                trigger="manual",
+            )
+            raise UserError(_("MercadoLibre rechazó la actualización del título:\n\n%s") % err)
+        except UserError:
+            raise
+        except requests.exceptions.RequestException as e:
+            duration_ms = int((time.time() - start) * 1000)
+            self.env["ml.sync.log"]._log_sync(
+                account=self.ml_account_id,
+                operation="item_update",
+                result="error",
+                publication_id=self,
+                value_before=old_title,
+                value_after=title_ml,
+                http_status=0,
+                error_message=str(e),
+                duration_ms=duration_ms,
+                trigger="manual",
+            )
+            raise UserError(_("Error de conexión al actualizar el título en MercadoLibre:\n\n%s") % str(e)) from e
+
+    def _force_update_seller_sku_in_ml(self, sku_str):
+        """Envía SKU a ML (seller_custom_field en ítem o en la variación de esta publicación)."""
+        self.ensure_one()
+        sku_str = (sku_str or "").strip()
+        if not sku_str:
+            return True
+        if not self.ml_item_id or not self.ml_account_id or not self.ml_account_id.access_token:
+            raise UserError(_("Falta ítem en Mercado Libre o la cuenta no tiene token válido."))
+        self.ml_account_id._ensure_valid_token()
+        url = f"https://api.mercadolibre.com/items/{self.ml_item_id}"
+        headers = {
+            "Authorization": f"Bearer {self.ml_account_id.access_token}",
+            "Content-Type": "application/json",
+        }
+        old_sku = (self.seller_sku or "").strip()
+        start = time.time()
+        try:
             if self.ml_variation_id:
-                same_item = self.search([("ml_item_id", "=", self.ml_item_id), ("ml_account_id", "=", self.ml_account_id.id)])
-                same_item.write({"current_price_ml": price_send})
-        except Exception as e:
-            _logger.error("❌ Error actualizando precio en MercadoLibre: %s", str(e))
-            raise UserError(_("Error al actualizar precio en MercadoLibre:\n\n%s") % str(e))
-        
-        message = _("Precio actualizado correctamente:\n\n") + \
-                  f"• Precio: ${price_send:.2f}\n\n" + \
-                  _("✅ Precio sincronizado con MercadoLibre")
-        
+                variations = self._fetch_ml_item_variations_for_put()
+                if not variations:
+                    raise UserError(
+                        _("No se pudieron leer las variaciones del ítem en MercadoLibre; no se puede actualizar el SKU de la variación.")
+                    )
+                payload = {
+                    "variations": [
+                        {
+                            "id": v.get("id"),
+                            "price": float(v.get("price") or 0),
+                            "available_quantity": int(v.get("available_quantity") or 0),
+                            **(
+                                {"seller_custom_field": sku_str}
+                                if str(v.get("id")) == str(self.ml_variation_id)
+                                else {}
+                            ),
+                        }
+                        for v in variations
+                    ]
+                }
+            else:
+                payload = {"seller_custom_field": sku_str}
+            response = requests.put(url, headers=headers, json=payload, timeout=30)
+            duration_ms = int((time.time() - start) * 1000)
+            http_status = response.status_code
+            if response.status_code in (200, 201):
+                self.env["ml.sync.log"]._log_sync(
+                    account=self.ml_account_id,
+                    operation="item_update",
+                    result="ok",
+                    publication_id=self,
+                    value_before=old_sku or "",
+                    value_after=sku_str,
+                    http_status=http_status,
+                    duration_ms=duration_ms,
+                    trigger="manual",
+                )
+                return True
+            err = self._ml_item_put_error_message(response)
+            self.env["ml.sync.log"]._log_sync(
+                account=self.ml_account_id,
+                operation="item_update",
+                result="error",
+                publication_id=self,
+                value_before=old_sku or "",
+                value_after=sku_str,
+                http_status=http_status,
+                error_message=err,
+                duration_ms=duration_ms,
+                trigger="manual",
+            )
+            raise UserError(_("MercadoLibre rechazó la actualización del SKU:\n\n%s") % err)
+        except UserError:
+            raise
+        except requests.exceptions.RequestException as e:
+            duration_ms = int((time.time() - start) * 1000)
+            self.env["ml.sync.log"]._log_sync(
+                account=self.ml_account_id,
+                operation="item_update",
+                result="error",
+                publication_id=self,
+                value_before=old_sku or "",
+                value_after=sku_str,
+                http_status=0,
+                error_message=str(e),
+                duration_ms=duration_ms,
+                trigger="manual",
+            )
+            raise UserError(_("Error de conexión al actualizar el SKU en MercadoLibre:\n\n%s") % str(e)) from e
+
+    def action_open_ml_values_wizard(self):
+        self.ensure_one()
+        if not self.ml_item_id:
+            raise UserError(_("Esta publicación no tiene ítem en MercadoLibre. Publique o importe la publicación primero."))
         return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': _('Actualización de Precio'),
-                'message': message,
-                'type': 'success',
-                'sticky': False,
-            }
+            "type": "ir.actions.act_window",
+            "name": _("Actualizar valores"),
+            "res_model": "ml.publication.values.wizard",
+            "view_mode": "form",
+            "target": "new",
+            "context": {"default_publication_id": self.id},
         }
-    
-    def action_update_stock_from_product(self):
+
+    def _apply_values_wizard_to_ml(self, title_ml, price, stock, sku):
         """
-        Actualiza SOLO el stock desde el producto relacionado y lo envía a MercadoLibre.
+        Aplica título, precio, stock y SKU en la API de MercadoLibre y refleja los valores en Odoo.
         """
         self.ensure_one()
-        
-        if not self.product_tmpl_id:
-            raise UserError(_("No hay producto relacionado para actualizar el stock."))
-        
         if not self.ml_item_id:
-            raise UserError(_("Esta publicación no está publicada en MercadoLibre. Publique primero la publicación."))
-        
+            raise UserError(_("Esta publicación no está publicada en MercadoLibre."))
         if not self.ml_account_id or not self.ml_account_id.access_token:
             raise UserError(_("La cuenta de MercadoLibre no está conectada. Autorice la cuenta primero."))
-        
-        # Verificar y refrescar token si es necesario
         self.ml_account_id._ensure_valid_token()
-        
-        # Obtener stock desde Odoo: usar la misma lógica que _compute_stock (variante seleccionada, almacén, tipo disponible/esperado)
-        try:
-            self.invalidate_recordset(['stock'])
-            self._compute_stock()
-            stock_value = max(0, int(self.stock or 0))
-            _logger.info("📦 Stock a replicar en ML: %d (desde variante/producto relacionado)", stock_value)
-        except Exception as e:
-            _logger.warning("⚠️ Error obteniendo stock: %s", str(e))
-            raise UserError(_("Error al obtener stock:\n\n%s") % str(e))
-        
-        # Actualizar en MercadoLibre directamente con el valor obtenido
-        try:
-            self._force_update_stock_in_ml(stock_value=stock_value)
-            _logger.info("✅ Stock replicado en MercadoLibre: %d", stock_value)
-        except Exception as e:
-            _logger.error("❌ Error actualizando stock en MercadoLibre: %s", str(e))
-            raise UserError(_("Error al actualizar stock en MercadoLibre:\n\n%s") % str(e))
-        
-        message = _("Stock actualizado correctamente:\n\n") + \
-                  f"• Stock: {stock_value}\n\n" + \
-                  _("✅ Stock replicado en MercadoLibre")
-        
-        return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': _('Actualización de Stock'),
-                'message': message,
-                'type': 'success',
-                'sticky': False,
+        price = max(0.0, float(price or 0.0))
+        if price <= 0:
+            raise UserError(_("Indique un precio válido mayor a cero."))
+        stock = max(0, int(stock or 0))
+
+        self._force_update_title_in_ml(title_ml)
+        self._force_update_seller_sku_in_ml(sku)
+
+        if not self._force_update_price_in_ml(price_value=price):
+            raise UserError(
+                _("MercadoLibre no aceptó la actualización del precio. Revise el historial de sincronización o los mensajes de error de la API.")
+            )
+        if self.ml_variation_id:
+            same_item = self.search(
+                [("ml_item_id", "=", self.ml_item_id), ("ml_account_id", "=", self.ml_account_id.id)]
+            )
+            same_item.write({"current_price_ml": price})
+
+        if not self._force_update_stock_in_ml(stock_value=stock):
+            raise UserError(
+                _("MercadoLibre no aceptó la actualización del stock. Revise el historial de sincronización o los mensajes de error de la API.")
+            )
+
+        self.write(
+            {
+                "title": (title_ml or "").strip(),
+                "seller_sku": sku or False,
+                "new_price_ml": price,
+                "new_stock_ml": stock,
             }
+        )
+
+        message = (
+            _("Valores aplicados en MercadoLibre:\n\n")
+            + f"• {_('Título')}: {title_ml}\n"
+            + f"• {_('Precio')}: {price:.2f}\n"
+            + f"• {_('Stock')}: {stock}\n"
+            + f"• {_('SKU')}: {sku or '-'}\n"
+        )
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {
+                "title": _("Actualizar valores"),
+                "message": message,
+                "type": "success",
+                "sticky": False,
+            },
         }
-    
+
     def _force_update_price_stock_in_ml(self):
         """
         Fuerza la actualización de precio y stock en MercadoLibre, incluso si el item está activo.
@@ -4897,29 +5190,66 @@ class MLPublication(models.Model):
             payload = {"price": price_value}
         
         _logger.info("📤 Enviando precio a ML: item_id=%s, precio_enviado=%.2f", self.ml_item_id, price_value)
-        
+
+        old_price = self.current_price_ml
+        start = time.time()
         try:
             response = requests.put(url, headers=headers, json=payload, timeout=30)
-            
+            duration_ms = int((time.time() - start) * 1000)
+            http_status = response.status_code
+
             if response.status_code in (200, 201):
                 # Obtener el precio que ML devolvió en la respuesta
                 response_data = response.json() if response.text else {}
                 price_ml_recibido = response_data.get('price', price_value)
-                
+
                 # Actualizar solo el campo current_price_ml con el valor enviado
                 self.write({
                     'current_price_ml': price_value,
                 })
-                _logger.info("✅ ML respondió: precio_enviado=%.2f, precio_recibido_en_respuesta=%s, current_price_ml_guardado=%.2f", 
+                _logger.info("✅ ML respondió: precio_enviado=%.2f, precio_recibido_en_respuesta=%s, current_price_ml_guardado=%.2f",
                            price_value, price_ml_recibido, price_value)
+                self.env['ml.sync.log']._log_sync(
+                    account=self.ml_account_id,
+                    operation='price_update',
+                    result='ok',
+                    publication_id=self,
+                    value_before='' if old_price in (False, None) else str(old_price),
+                    value_after=str(price_value),
+                    http_status=http_status,
+                    duration_ms=duration_ms,
+                )
                 return True
             else:
                 error_text = response.text
                 _logger.error("❌ Error actualizando precio en ML (status %d): %s", response.status_code, error_text)
+                self.env['ml.sync.log']._log_sync(
+                    account=self.ml_account_id,
+                    operation='price_update',
+                    result='error',
+                    publication_id=self,
+                    value_before='' if old_price in (False, None) else str(old_price),
+                    value_after=str(price_value),
+                    http_status=http_status,
+                    error_message=error_text or '',
+                    duration_ms=duration_ms,
+                )
                 # No lanzar excepción para no bloquear la sincronización automática
                 return False
         except requests.exceptions.RequestException as e:
+            duration_ms = int((time.time() - start) * 1000)
             _logger.error("❌ Error de conexión actualizando precio en ML: %s", str(e))
+            self.env['ml.sync.log']._log_sync(
+                account=self.ml_account_id,
+                operation='price_update',
+                result='error',
+                publication_id=self,
+                value_before='' if old_price in (False, None) else str(old_price),
+                value_after=str(price_value),
+                http_status=0,
+                error_message=str(e),
+                duration_ms=duration_ms,
+            )
             # No lanzar excepción para no bloquear la sincronización automática
             return False
     
@@ -4982,36 +5312,73 @@ class MLPublication(models.Model):
             payload = {"available_quantity": stock_value}
         
         _logger.info("📤 [3] Enviando a ML: item_id=%s, stock_enviado=%d", self.ml_item_id, stock_value)
-        
+
+        old_stock = self.current_stock_ml
+        start = time.time()
         try:
             response = requests.put(url, headers=headers, json=payload, timeout=30)
-            
+            duration_ms = int((time.time() - start) * 1000)
+            http_status = response.status_code
+
             if response.status_code in (200, 201):
                 # Obtener el stock que ML devolvió en la respuesta
                 response_data = response.json() if response.text else {}
                 stock_ml_recibido = response_data.get('available_quantity', stock_value)
-                
+
                 # Actualizar solo el campo current_stock_ml con el valor enviado
                 self.write({
                     'current_stock_ml': stock_value,
                 })
-                _logger.info("✅ [4] ML respondió: stock_enviado=%d, stock_recibido_en_respuesta=%s, current_stock_ml_guardado=%d", 
+                _logger.info("✅ [4] ML respondió: stock_enviado=%d, stock_recibido_en_respuesta=%s, current_stock_ml_guardado=%d",
                            stock_value, stock_ml_recibido, stock_value)
-                
+
                 # Verificar reglas de stock y pausar/activar automáticamente si está configurado
                 try:
                     self._check_stock_rules_and_update_status()
                 except Exception as e:
                     _logger.warning("⚠️ Error verificando reglas de stock después de actualizar stock: %s", e)
-                
+
+                self.env['ml.sync.log']._log_sync(
+                    account=self.ml_account_id,
+                    operation='stock_update',
+                    result='ok',
+                    publication_id=self,
+                    value_before='' if old_stock in (False, None) else str(old_stock),
+                    value_after=str(stock_value),
+                    http_status=http_status,
+                    duration_ms=duration_ms,
+                )
                 return True
             else:
                 error_text = response.text
                 _logger.error("❌ Error actualizando stock en ML (status %d): %s", response.status_code, error_text)
+                self.env['ml.sync.log']._log_sync(
+                    account=self.ml_account_id,
+                    operation='stock_update',
+                    result='error',
+                    publication_id=self,
+                    value_before='' if old_stock in (False, None) else str(old_stock),
+                    value_after=str(stock_value),
+                    http_status=http_status,
+                    error_message=error_text or '',
+                    duration_ms=duration_ms,
+                )
                 # No lanzar excepción para no bloquear la sincronización automática
                 return False
         except requests.exceptions.RequestException as e:
+            duration_ms = int((time.time() - start) * 1000)
             _logger.error("❌ Error de conexión actualizando stock en ML: %s", str(e))
+            self.env['ml.sync.log']._log_sync(
+                account=self.ml_account_id,
+                operation='stock_update',
+                result='error',
+                publication_id=self,
+                value_before='' if old_stock in (False, None) else str(old_stock),
+                value_after=str(stock_value),
+                http_status=0,
+                error_message=str(e),
+                duration_ms=duration_ms,
+            )
             # No lanzar excepción para no bloquear la sincronización automática
             return False
 

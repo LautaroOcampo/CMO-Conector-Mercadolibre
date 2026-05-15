@@ -54,7 +54,7 @@
             <form string="Aviso">
                 <sheet>
                     <div class="alert alert-warning mb-0" role="alert" style="font-size: 1.15em;">
-                        <h4 class="alert-heading" style="font-size: 1.5em;"><field name="title" readonly="1" nolabel="1"/></h4>
+                        <h4 class="mb-2 fw-bold" style="font-size: 1.5em;"><field name="title" readonly="1" nolabel="1"/></h4>
                         <field name="message" readonly="1" nolabel="1" style="font-size: 1.1em; white-space: pre-wrap; min-height: 80px;"/>
                     </div>
                 </sheet>
