@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_ml_import_orders_wizard_form" model="ir.ui.view">
+        <field name="name">ml.import.orders.wizard.form</field>
+        <field name="model">ml.import.orders.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Importar Órdenes de MercadoLibre">
+                <sheet>
+                    <group>
+                        <field name="ml_account_id" readonly="1"/>
+                        <field name="create_odoo_orders"/>
+                        <field name="create_customers"/>
+                    </group>
+                    <group string="Rango de fechas (opcional)">
+                        <field name="date_from" placeholder="Ej: 01/01/2025"/>
+                        <field name="date_to" placeholder="Ej: 24/02/2025"/>
+                    </group>
+                    <group>
+                        <div class="alert alert-info" role="alert">
+                            <p>
+                                <strong>Crear Órdenes de Venta en Odoo:</strong>
+                            </p>
+                            <ul>
+                                <li>Si está marcado: Se crearán automáticamente las órdenes de venta en Odoo y sus facturas para cada venta importada.</li>
+                                <li>Si no está marcado: Solo se importarán los registros de ventas de MercadoLibre sin crear órdenes de venta ni facturas en Odoo.</li>
+                            </ul>
+                            <p>
+                                <strong>Crear/Actualizar Contacto:</strong>
+                            </p>
+                            <ul>
+                                <li>Si está marcado: Se creará/actualizará el contacto del comprador en Odoo (match principal por Buyer ID de MercadoLibre).</li>
+                                <li>Si no está marcado: No se creará/actualizará ningún contacto. En ese caso, no es posible crear órdenes de venta de Odoo.</li>
+                            </ul>
+                        </div>
+                    </group>
+                </sheet>
+                <footer>
+                    <button name="action_import_orders" 
+                            string="Importar Órdenes" 
+                            type="object" 
+                            class="oe_highlight"/>
+                    <button string="Cancelar" 
+                            class="btn-secondary" 
+                            special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>
+

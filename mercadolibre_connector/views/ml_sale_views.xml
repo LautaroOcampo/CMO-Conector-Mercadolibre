@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_ml_sale_tree" model="ir.ui.view">
+        <field name="name">ml.sale.tree</field>
+        <field name="model">ml.sale</field>
+        <field name="arch" type="xml">
+            <list string="Ventas Mercado Libre" create="false" duplicate="false">
+                <field name="ml_order_id" string="ID ML"/>
+                <field name="name" string="Número"/>
+                <field name="customer_name" string="Cliente"/>
+                <field name="buyer_nickname" string="Nickname ML" optional="hide"/>
+                <field name="shipping_city" string="Ciudad Envío" optional="hide"/>
+                <field name="total_amount" string="Total"/>
+                <field name="status" widget="badge" decoration-success="status == 'paid'" decoration-info="status == 'confirmed'" decoration-warning="status == 'pending'" decoration-danger="status == 'cancelled'"/>
+                <field name="payment_status" string="Pago" widget="badge" decoration-success="payment_status == 'paid'" decoration-warning="payment_status == 'pending'" decoration-danger="payment_status == 'cancelled'"/>
+                <field name="ml_payment_terms_summary" string="Pago ML" optional="hide"/>
+                <field name="fulfillment_status" string="Envío" widget="badge" decoration-success="fulfillment_status == 'delivered'" decoration-info="fulfillment_status == 'shipped'" decoration-warning="fulfillment_status in ('to_pack', 'to_ship')"/>
+                <field name="date_created" string="Fecha"/>
+                <field name="test_sale" string="Test" widget="boolean_toggle" optional="hide"/>
+                <field name="odoo_sale_order_id" string="Orden Odoo" optional="hide"/>
+                <field name="ml_account_id" string="Cuenta ML" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ml_sale_form" model="ir.ui.view">
+        <field name="name">ml.sale.form</field>
+        <field name="model">ml.sale</field>
+        <field name="arch" type="xml">
+            <form string="Venta Mercado Libre">
+                <header>
+                    <button name="create_odoo_sale_order"
+                            string="Crear Orden de Venta en Odoo"
+                            type="object"
+                            class="oe_highlight"
+                            invisible="odoo_sale_order_id"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_partner"
+                                type="object"
+                                class="oe_stat_button"
+                                icon="fa-user"
+                                invisible="not odoo_partner_id">
+                            <span class="o_stat_text">Contacto</span>
+                        </button>
+                        <button name="action_view_publications"
+                                type="object"
+                                class="oe_stat_button"
+                                icon="fa-tag"
+                                invisible="publication_count == 0">
+                            <span class="o_stat_text">Publicación</span>
+                        </button>
+                        <button name="action_view_odoo_sale_order"
+                                type="object"
+                                class="oe_stat_button"
+                                icon="fa-shopping-cart"
+                                invisible="not odoo_sale_order_id">
+                            <span class="o_stat_text">Orden de Venta</span>
+                        </button>
+                    </div>
+                    
+                    <!-- Resumen Principal -->
+                    <group>
+                        <group string="Información General de la Orden">
+                            <field name="ml_order_id"/>
+                            <field name="name"/>
+                            <field name="ml_account_id"/>
+                            <field name="date_created"/>
+                            <field name="date_closed"/>
+                            <field name="test_sale"/>
+                        </group>
+                        <group string="Estados">
+                            <field name="status" widget="badge" decoration-success="status == 'paid'" decoration-info="status == 'confirmed'" decoration-warning="status == 'pending'" decoration-danger="status == 'cancelled'"/>
+                            <field name="payment_status" widget="badge" decoration-success="payment_status == 'paid'" decoration-warning="payment_status == 'pending'" decoration-danger="payment_status == 'cancelled'"/>
+                            <field name="payment_release_status" widget="badge" decoration-success="payment_release_status in ('available', 'money_in_account', 'released')" decoration-warning="payment_release_status in ('pending_review', 'pending_manual_review', 'pending_transfer')" decoration-danger="payment_release_status == 'blocked'"/>
+                            <field name="fulfillment_status" widget="badge" decoration-success="fulfillment_status == 'delivered'" decoration-info="fulfillment_status == 'shipped'" decoration-warning="fulfillment_status in ('to_pack', 'to_ship')"/>
+                        </group>
+                        <group string="Términos de pago (Mercado Libre)">
+                            <field name="ml_payment_max_installments"/>
+                            <field name="ml_payment_has_installments"/>
+                            <field name="ml_payment_terms_summary" colspan="2"/>
+                        </group>
+                        <group string="Resumen Financiero">
+                            <field name="currency_id" widget="radio" options="{'horizontal': true}"/>
+                            <field name="subtotal"/>
+                            <field name="shipping_cost"/>
+                            <field name="total_tax_amount"/>
+                            <field name="total_amount" widget="monetary" options="{'currency_field': 'currency_id'}"/>
+                        </group>
+                        <group string="Información de IVA">
+                            <field name="price_includes_tax"/>
+                            <field name="tax_rate"/>
+                            <field name="tax_id"/>
+                        </group>
+                    </group>
+                    
+                    <notebook>
+                        <page string="📦 Información de la Venta" icon="fa-shopping-cart">
+                            <group>
+                                <group string="Detalles de la Orden">
+                                    <field name="ml_order_id"/>
+                                    <field name="name"/>
+                                    <field name="ml_account_id"/>
+                                    <field name="date_created"/>
+                                    <field name="date_closed"/>
+                                    <field name="test_sale"/>
+                                </group>
+                                <group string="Estados Detallados">
+                                    <field name="status" widget="badge" decoration-success="status == 'paid'" decoration-info="status == 'confirmed'" decoration-warning="status == 'pending'" decoration-danger="status == 'cancelled'"/>
+                                    <field name="payment_status" widget="badge" decoration-success="payment_status == 'paid'" decoration-warning="payment_status == 'pending'" decoration-danger="payment_status == 'cancelled'"/>
+                                    <field name="payment_release_status" widget="badge" decoration-success="payment_release_status in ('available', 'money_in_account', 'released')" decoration-warning="payment_release_status in ('pending_review', 'pending_manual_review', 'pending_transfer')" decoration-danger="payment_release_status == 'blocked'"/>
+                                    <field name="fulfillment_status" widget="badge" decoration-success="fulfillment_status == 'delivered'" decoration-info="fulfillment_status == 'shipped'" decoration-warning="fulfillment_status in ('to_pack', 'to_ship')"/>
+                                </group>
+                                <group string="Términos de pago (ML)">
+                                    <field name="ml_payment_max_installments"/>
+                                    <field name="ml_payment_has_installments"/>
+                                    <field name="ml_payment_terms_summary" colspan="2"/>
+                                </group>
+                            </group>
+                            <group string="Totales">
+                                <field name="currency_id" widget="radio" options="{'horizontal': true}"/>
+                                <field name="subtotal"/>
+                                <field name="shipping_cost"/>
+                                <field name="total_tax_amount"/>
+                                <field name="total_amount" widget="monetary" options="{'currency_field': 'currency_id'}"/>
+                            </group>
+                            <group string="Información de IVA">
+                                <field name="price_includes_tax"/>
+                                <field name="tax_rate"/>
+                                <field name="tax_id"/>
+                            </group>
+                            <group string="Líneas de Venta">
+                                <field name="line_ids" nolabel="1" colspan="2">
+                                    <list string="Items de la Orden" editable="bottom">
+                                        <field name="sequence" widget="handle" optional="hide"/>
+                                        <field name="name" string="Producto"/>
+                                        <field name="sku" string="SKU"/>
+                                        <field name="quantity" string="Cantidad"/>
+                                        <field name="price_unit" string="Precio Unitario"/>
+                                        <field name="price_subtotal" string="Subtotal" readonly="1"/>
+                                        <field name="product_tmpl_id" string="Producto Template" optional="hide"/>
+                                        <field name="product_id" string="Variante" optional="hide"/>
+                                        <field name="ml_item_id" string="ML Item ID" optional="hide"/>
+                                    </list>
+                                </field>
+                            </group>
+                        </page>
+                        
+                        <page string="👤 Datos del Cliente" icon="fa-user">
+                            <group>
+                                <group string="Información en MercadoLibre">
+                                    <field name="buyer_id"/>
+                                    <field name="buyer_nickname"/>
+                                    <field name="customer_name"/>
+                                    <field name="customer_email" widget="email"/>
+                                    <field name="customer_phone" widget="phone"/>
+                                    <field name="customer_dni"/>
+                                </group>
+                                <group string="Cliente en Odoo">
+                                    <field name="odoo_partner_id" options="{'no_create': False, 'no_open': True}"/>
+                                </group>
+                            </group>
+                        </page>
+                        
+                        <page string="🚚 Dirección de Envío" icon="fa-truck">
+                            <group>
+                                <group string="Datos del Receptor">
+                                    <field name="shipping_receiver_name"/>
+                                    <field name="shipping_receiver_phone" widget="phone"/>
+                                </group>
+                                <group string="Ubicación">
+                                    <field name="shipping_city"/>
+                                    <field name="shipping_state"/>
+                                    <field name="shipping_country"/>
+                                    <field name="shipping_zip"/>
+                                </group>
+                            </group>
+                            <group string="Dirección Completa">
+                                <field name="shipping_street" placeholder="Calle"/>
+                                <field name="shipping_street_number" placeholder="Número"/>
+                                <field name="shipping_floor" placeholder="Piso"/>
+                                <field name="shipping_apartment" placeholder="Departamento"/>
+                            </group>
+                            <group>
+                                <field name="shipping_comment" widget="text" placeholder="Comentarios adicionales sobre la dirección de envío"/>
+                            </group>
+                        </page>
+                        
+                        <page string="📋 Líneas de Venta Detalladas" icon="fa-list">
+                            <field name="line_ids" nolabel="1">
+                                <list string="Items de la Orden" editable="bottom">
+                                    <field name="sequence" widget="handle" optional="hide"/>
+                                    <field name="name" string="Producto"/>
+                                    <field name="sku" string="SKU"/>
+                                    <field name="quantity" string="Cantidad"/>
+                                    <field name="price_unit" string="Precio Unitario"/>
+                                    <field name="price_subtotal" string="Subtotal" readonly="1"/>
+                                    <field name="product_tmpl_id" string="Producto Template"/>
+                                    <field name="product_id" string="Variante"/>
+                                    <field name="ml_item_id" string="ML Item ID" optional="hide"/>
+                                </list>
+                            </field>
+                        </page>
+                        
+                        <page string="💾 Datos Completos (JSON)" icon="fa-code">
+                            <field name="full_order_data" nolabel="1" widget="text" readonly="1" placeholder="Datos completos de la orden en formato JSON"/>
+                        </page>
+                        
+                        <page string="📝 Notas" icon="fa-sticky-note">
+                            <field name="notes" nolabel="1" widget="text" placeholder="Notas adicionales sobre esta orden"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_ml_sale_line_tree" model="ir.ui.view">
+        <field name="name">ml.sale.line.tree</field>
+        <field name="model">ml.sale.line</field>
+        <field name="arch" type="xml">
+            <list string="Líneas de Venta">
+                <field name="order_id"/>
+                <field name="name"/>
+                <field name="sku"/>
+                <field name="quantity"/>
+                <field name="price_unit"/>
+                <field name="price_subtotal"/>
+                <field name="product_tmpl_id"/>
+                <field name="product_id"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ml_sale_line_form" model="ir.ui.view">
+        <field name="name">ml.sale.line.form</field>
+        <field name="model">ml.sale.line</field>
+        <field name="arch" type="xml">
+            <form string="Línea de Venta">
+                <sheet>
+                    <group>
+                        <field name="order_id"/>
+                        <field name="name"/>
+                        <field name="ml_item_id"/>
+                        <field name="sku"/>
+                        <field name="quantity"/>
+                        <field name="price_unit"/>
+                        <field name="price_subtotal"/>
+                        <field name="product_tmpl_id"/>
+                        <field name="product_id"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+</odoo>

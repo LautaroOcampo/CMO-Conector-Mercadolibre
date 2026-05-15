@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ===================================================== -->
+    <!-- ⚠️ TEMPORAL: VISTAS PARA USUARIOS TEST -->
+    <!-- TODO: REMOVER ESTAS VISTAS CUANDO YA NO SE NECESITE -->
+    <!-- ===================================================== -->
+    
+    <!-- Vista tipo lista -->
+    <record id="view_ml_test_user_tree" model="ir.ui.view">
+        <field name="name">ml.test.user.tree</field>
+        <field name="model">ml.test.user</field>
+        <field name="arch" type="xml">
+            <list string="Usuarios Test de MercadoLibre">
+                <field name="nickname" string="Nickname"/>
+                <field name="user_id" string="ID Usuario"/>
+                <field name="password" string="Password" password="True"/>
+                <field name="email" string="Email"/>
+                <field name="site_id" string="Site ID"/>
+                <field name="create_date" string="Fecha de Creación"/>
+                <field name="ml_account_id" string="Cuenta ML" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Vista formulario -->
+    <record id="view_ml_test_user_form" model="ir.ui.view">
+        <field name="name">ml.test.user.form</field>
+        <field name="model">ml.test.user</field>
+        <field name="arch" type="xml">
+            <form string="Usuario Test de MercadoLibre">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="ml_account_id" readonly="1"/>
+                            <field name="user_id" readonly="1"/>
+                            <field name="nickname" readonly="1"/>
+                            <field name="password" readonly="1" password="True"/>
+                            <field name="site_id" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="email" readonly="1"/>
+                            <field name="first_name" readonly="1"/>
+                            <field name="last_name" readonly="1"/>
+                            <field name="create_date" readonly="1"/>
+                        </group>
+                    </group>
+                    
+                    <group string="Datos Completos (JSON)">
+                        <field name="full_data" readonly="1" nolabel="1" widget="text"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Acción para abrir usuarios test -->
+    <record id="action_ml_test_user" model="ir.actions.act_window">
+        <field name="name">Usuarios Test de MercadoLibre</field>
+        <field name="res_model">ml.test.user</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No hay usuarios test guardados
+            </p>
+            <p>
+                Los usuarios test se crean usando el botón "Crear Usuario Test" en la cuenta de MercadoLibre.
+            </p>
+        </field>
+    </record>
+
+    <!-- ===================================================== -->
+    <!-- FIN SECCIÓN TEMPORAL -->
+    <!-- ===================================================== -->
+</odoo>
+

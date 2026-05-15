@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Wizard para Matchear Publicaciones desde MELI -->
+    <record id="view_ml_match_publications_wizard_form" model="ir.ui.view">
+        <field name="name">ml.match.publications.wizard.form</field>
+        <field name="model">ml.match.publications.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Matchear Publicaciones MELI con Productos Odoo">
+                <sheet>
+                    <div class="oe_title">
+                        <h1>
+                            <span>Matchear Publicaciones desde MercadoLibre</span>
+                        </h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="ml_account_id" options="{'no_create': True, 'no_open': True}"/>
+                        </group>
+                        <group>
+                            <field name="matched_count" readonly="1"/>
+                            <field name="unmatched_count" readonly="1"/>
+                        </group>
+                    </group>
+                    <div class="alert alert-info" role="alert">
+                        <p><strong>Instrucciones:</strong></p>
+                        <ul>
+                            <li>Este wizard matcheará automáticamente las publicaciones de MercadoLibre con productos de Odoo</li>
+                            <li>El matcheo se realiza usando el SKU</li>
+                            <li>Se busca en: <code>seller_sku</code>, atributo <code>SELLER_SKU</code>, o <code>seller_sku</code> de variantes</li>
+                            <li>Solo se matchean publicaciones que aún no tienen producto relacionado</li>
+                        </ul>
+                    </div>
+                </sheet>
+                <footer>
+                    <button string="Matchear" name="action_match_publications" type="object" class="btn-primary"/>
+                    <button string="Cancelar" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_ml_match_publications_wizard" model="ir.actions.act_window">
+        <field name="name">Matchear Publicaciones desde MELI</field>
+        <field name="res_model">ml.match.publications.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <!-- Wizard aviso publicaciones con variantes (cartel en pantalla) -->
+    <record id="view_ml_variant_warning_wizard_form" model="ir.ui.view">
+        <field name="name">ml.variant.warning.wizard.form</field>
+        <field name="model">ml.variant.warning.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Aviso">
+                <sheet>
+                    <div class="alert alert-warning mb-0" role="alert" style="font-size: 1.15em;">
+                        <h4 class="alert-heading" style="font-size: 1.5em;"><field name="title" readonly="1" nolabel="1"/></h4>
+                        <field name="message" readonly="1" nolabel="1" style="font-size: 1.1em; white-space: pre-wrap; min-height: 80px;"/>
+                    </div>
+                </sheet>
+                <footer>
+                    <button string="Entendido" name="action_close" type="object" class="btn-primary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_ml_variant_warning_wizard" model="ir.actions.act_window">
+        <field name="name">Aviso: Publicaciones con variantes</field>
+        <field name="res_model">ml.variant.warning.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+        <field name="binding_model_id" eval="False"/>
+    </record>
+
+</odoo>
+

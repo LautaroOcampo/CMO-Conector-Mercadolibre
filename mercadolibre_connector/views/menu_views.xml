@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Menú principal (web_icon = icono en la lista de Apps de Odoo) -->
+    <menuitem id="menu_ml_root"
+              name="Mercado Libre"
+              web_icon="mercadolibre_connector,static/description/icon.png"
+              sequence="10"/>
+
+    <!-- Acción de cuentas -->
+    <record id="action_ml_account" model="ir.actions.act_window">
+        <field name="name">Cuentas Mercado Libre</field>
+        <field name="res_model">ml.account</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <menuitem id="menu_ml_accounts"
+              name="Cuentas"
+              parent="menu_ml_root"
+              action="action_ml_account"
+              sequence="20"/>
+
+    <!-- Acción de publicaciones -->
+    <record id="action_ml_publication" model="ir.actions.act_window">
+        <field name="name">Publicaciones Mercado Libre</field>
+        <field name="res_model">ml.publication</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <menuitem id="menu_ml_publication"
+              name="Publicaciones"
+              parent="menu_ml_root"
+              action="action_ml_publication"
+              sequence="30"/>
+
+    <!-- Acción de ventas -->
+    <record id="action_ml_sale" model="ir.actions.act_window">
+        <field name="name">Ventas Mercado Libre</field>
+        <field name="res_model">ml.sale</field>
+        <field name="view_mode">list,form</field>
+        <field name="view_id" ref="mercadolibre_connector.view_ml_sale_tree"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No hay ventas de MercadoLibre
+            </p>
+            <p>
+                Las ventas se importan automáticamente cuando llegan a través del webhook.
+            </p>
+        </field>
+    </record>
+
+    <menuitem id="menu_ml_sale"
+              name="Ventas"
+              parent="menu_ml_root"
+              action="action_ml_sale"
+              sequence="40"/>
+</odoo>
