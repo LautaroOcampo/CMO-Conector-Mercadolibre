@@ -1,182 +1,206 @@
-<section class="oe_container">
-    <div class="oe_row oe_spaced" style="text-align:center; padding: 40px 0 20px;">
-        <img src="icon.png" alt="Mercado Libre Connector" style="max-width:96px; border-radius:16px; margin-bottom:16px;"/>
-        <h1 style="font-size:2.2em; font-weight:800; margin:0 0 8px;">Mercado Libre Connector for Odoo</h1>
-        <h2 style="font-size:1.2em; font-weight:400; color:#666; margin:0 0 24px;">Manage your Mercado Libre operation entirely from Odoo</h2>
-        <div style="display:inline-flex; gap:12px; flex-wrap:wrap; justify-content:center;">
-            <span style="background:#f0f4ff; color:#3b5bdb; border-radius:20px; padding:6px 16px; font-size:0.9em; font-weight:600;">✅ Odoo 19 Ready</span>
-            <span style="background:#f0fff4; color:#2f9e44; border-radius:20px; padding:6px 16px; font-size:0.9em; font-weight:600;">🇦🇷 Argentina &amp; LATAM</span>
-            <span style="background:#fff9f0; color:#e67700; border-radius:20px; padding:6px 16px; font-size:0.9em; font-weight:600;">⚡ Real-time webhooks</span>
-            <span style="background:#fff0f6; color:#c2255c; border-radius:20px; padding:6px 16px; font-size:0.9em; font-weight:600;">🧾 Auto-invoicing</span>
+<style>
+    .ml-desc ul { list-style: none; padding: 0; margin: 0; }
+    .ml-desc li { position: relative; padding-left: 16px; }
+    .ml-desc li:before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0.65em;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #00a650;
+    }
+</style>
+<section class="oe_container ml-desc" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif; color:#1c2430; line-height:1.6;">
+
+    <div class="oe_row" style="background:#16122b; color:#fff; border-radius:16px; padding:48px 40px 40px; margin-bottom:28px; border-left:6px solid #00a650;">
+        <p style="margin:0 0 10px; letter-spacing:0.14em; font-size:12px; font-weight:700; color:#7dcea0;">GALARRETA</p>
+        <h1 style="font-size:34px; font-weight:800; margin:0 0 10px; line-height:1.15; color:#fff;">Conector Mercado Libre para Odoo</h1>
+        <p style="font-size:18px; font-weight:400; color:#d5d8e0; margin:0 0 26px; max-width:640px;">Gestioná tu operación de Mercado Libre desde Odoo.</p>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <span style="background:rgba(255,255,255,0.08); color:#fff; border:1px solid rgba(255,255,255,0.16); border-radius:999px; padding:6px 14px; font-size:13px; font-weight:600;">Odoo 19</span>
+            <span style="background:rgba(255,255,255,0.08); color:#fff; border:1px solid rgba(255,255,255,0.16); border-radius:999px; padding:6px 14px; font-size:13px; font-weight:600;">Argentina y LATAM</span>
+            <span style="background:rgba(0,166,80,0.18); color:#b7f0cf; border:1px solid rgba(0,166,80,0.35); border-radius:999px; padding:6px 14px; font-size:13px; font-weight:600;">Webhooks en tiempo real</span>
+            <span style="background:rgba(0,166,80,0.18); color:#b7f0cf; border:1px solid rgba(0,166,80,0.35); border-radius:999px; padding:6px 14px; font-size:13px; font-weight:600;">Facturación automática</span>
         </div>
     </div>
-</section>
 
-<section class="oe_container oe_dark">
-    <div class="oe_row oe_spaced" style="padding: 32px 0;">
-        <h3 class="oe_slogan" style="font-size:1.5em; font-weight:700; margin-bottom:8px;">External service required</h3>
-        <p class="text-center" style="max-width:680px; margin:0 auto; color:#555; line-height:1.7;">
-            This module integrates Odoo with the <strong>Mercado Libre API</strong>.
-            An active Mercado Libre seller account and a developer application (App ID / Client Secret) are required.
-            Authorization is handled via OAuth 2.0 — your credentials are stored only in your own Odoo database.
+    <div class="oe_row" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; margin-bottom:28px;">
+        <div style="background:#fff; border:1px solid #e6e8ee; border-radius:12px; padding:22px 24px;">
+            <h3 style="margin:0 0 8px; font-size:16px; font-weight:700;">Servicio externo</h3>
+            <p style="margin:0; color:#5c6570; font-size:14px;">El módulo se conecta a la API de Mercado Libre. Hace falta una cuenta de vendedor activa y una aplicación de desarrollador (App ID y Client Secret).</p>
+        </div>
+        <div style="background:#fff; border:1px solid #e6e8ee; border-radius:12px; padding:22px 24px;">
+            <h3 style="margin:0 0 8px; font-size:16px; font-weight:700;">Credenciales en tu base</h3>
+            <p style="margin:0; color:#5c6570; font-size:14px;">La autorización es OAuth 2.0. Los tokens quedan solo en tu base de Odoo. Sin clave de activación y sin servidor de terceros.</p>
+        </div>
+    </div>
+
+    <div class="oe_row" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:48px;">
+        <div style="background:#f4fbf7; border-radius:12px; padding:18px 16px; text-align:center;">
+            <div style="font-size:22px; font-weight:800; color:#00a650;">19</div>
+            <div style="font-size:13px; color:#5c6570;">Listo para Odoo 19</div>
+        </div>
+        <div style="background:#f4fbf7; border-radius:12px; padding:18px 16px; text-align:center;">
+            <div style="font-size:22px; font-weight:800; color:#00a650;">OAuth</div>
+            <div style="font-size:13px; color:#5c6570;">Autorización 2.0</div>
+        </div>
+        <div style="background:#f4fbf7; border-radius:12px; padding:18px 16px; text-align:center;">
+            <div style="font-size:18px; font-weight:800; color:#00a650;">Webhook</div>
+            <div style="font-size:13px; color:#5c6570;">Órdenes por webhook</div>
+        </div>
+        <div style="background:#f4fbf7; border-radius:12px; padding:18px 16px; text-align:center;">
+            <div style="font-size:22px; font-weight:800; color:#00a650;">A/B</div>
+            <div style="font-size:13px; color:#5c6570;">Factura según el comprador</div>
+        </div>
+    </div>
+
+    <div class="oe_row" style="margin-bottom:48px;">
+        <h2 style="text-align:center; font-size:26px; font-weight:800; margin:0 0 8px;">Por qué Mercado Libre y Odoo funcionan mejor juntos</h2>
+        <p style="text-align:center; color:#6b7280; margin:0 0 28px;">Conectados, la tienda, el stock y la facturación quedan en un solo lugar.</p>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px;">
+            <div style="background:#f7f8fb; border-radius:12px; padding:24px;">
+                <div style="width:36px; height:36px; border-radius:8px; background:#e7f6ee; margin-bottom:14px; display:flex; align-items:center; justify-content:center;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00a650" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10l8-6 8 6"/><path d="M6 9.5V20h12V9.5"/><path d="M10 20v-6h4v6"/></svg>
+                </div>
+                <h3 style="margin:0 0 8px; font-size:16px; font-weight:700;">Tu tienda, tus reglas</h3>
+                <p style="margin:0; color:#5c6570; font-size:14px;">Publicaciones, precios y stock de Mercado Libre se administran desde Odoo, sin saltar de plataforma.</p>
+            </div>
+            <div style="background:#f7f8fb; border-radius:12px; padding:24px;">
+                <div style="width:36px; height:36px; border-radius:8px; background:#e7f6ee; margin-bottom:14px; display:flex; align-items:center; justify-content:center;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00a650" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h8l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M15 3v5h5"/><path d="M9 13h6"/><path d="M9 17h4"/></svg>
+                </div>
+                <h3 style="margin:0 0 8px; font-size:16px; font-weight:700;">Facturación automática</h3>
+                <p style="margin:0; color:#5c6570; font-size:14px;">Cada venta genera la factura en Odoo, con tipo A o B según la condición fiscal del comprador.</p>
+            </div>
+            <div style="background:#f7f8fb; border-radius:12px; padding:24px;">
+                <div style="width:36px; height:36px; border-radius:8px; background:#e7f6ee; margin-bottom:14px; display:flex; align-items:center; justify-content:center;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00a650" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5"/><path d="M12 12v9"/><path d="M12 12L4 7.5"/></svg>
+                </div>
+                <h3 style="margin:0 0 8px; font-size:16px; font-weight:700;">Stock siempre al día</h3>
+                <p style="margin:0; color:#5c6570; font-size:14px;">El stock de Odoo se refleja en las publicaciones. Las reglas de pausa y reactivación evitan sobreventa.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="oe_row" style="background:#f7f8fb; border-radius:16px; padding:36px 32px; margin-bottom:48px;">
+        <h2 style="text-align:center; font-size:26px; font-weight:800; margin:0 0 28px;">Cómo funciona</h2>
+        <div style="max-width:680px; margin:0 auto;">
+            <div style="display:flex; gap:16px; margin-bottom:20px;">
+                <div style="min-width:32px; height:32px; background:#00a650; color:#fff; border-radius:50%; text-align:center; line-height:32px; font-weight:700; font-size:14px;">1</div>
+                <div>
+                    <strong>Instalá y abrí la configuración de Mercado Libre</strong>
+                    <p style="margin:4px 0 0; color:#5c6570; font-size:14px;">Aparece un menú propio dentro de Ventas.</p>
+                </div>
+            </div>
+            <div style="display:flex; gap:16px; margin-bottom:20px;">
+                <div style="min-width:32px; height:32px; background:#00a650; color:#fff; border-radius:50%; text-align:center; line-height:32px; font-weight:700; font-size:14px;">2</div>
+                <div>
+                    <strong>Cargá el App ID y el Client Secret</strong>
+                    <p style="margin:4px 0 0; color:#5c6570; font-size:14px;">Los datos salen de tu aplicación en el portal de desarrolladores de Mercado Libre.</p>
+                </div>
+            </div>
+            <div style="display:flex; gap:16px; margin-bottom:20px;">
+                <div style="min-width:32px; height:32px; background:#00a650; color:#fff; border-radius:50%; text-align:center; line-height:32px; font-weight:700; font-size:14px;">3</div>
+                <div>
+                    <strong>Autorizá con OAuth 2.0</strong>
+                    <p style="margin:4px 0 0; color:#5c6570; font-size:14px;">Los tokens se guardan en tu base y se renuevan solos.</p>
+                </div>
+            </div>
+            <div style="display:flex; gap:16px; margin-bottom:20px;">
+                <div style="min-width:32px; height:32px; background:#00a650; color:#fff; border-radius:50%; text-align:center; line-height:32px; font-weight:700; font-size:14px;">4</div>
+                <div>
+                    <strong>Importá publicaciones y vinculalas por SKU</strong>
+                    <p style="margin:4px 0 0; color:#5c6570; font-size:14px;">Matching automático por SKU o asignación manual, con variantes.</p>
+                </div>
+            </div>
+            <div style="display:flex; gap:16px;">
+                <div style="min-width:32px; height:32px; background:#00a650; color:#fff; border-radius:50%; text-align:center; line-height:32px; font-weight:700; font-size:14px;">5</div>
+                <div>
+                    <strong>Activá los webhooks</strong>
+                    <p style="margin:4px 0 0; color:#5c6570; font-size:14px;">Cada venta genera pedido, entrega y factura en Odoo.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="oe_row" style="margin-bottom:48px;">
+        <h2 style="text-align:center; font-size:26px; font-weight:800; margin:0 0 8px;">Qué se sincroniza</h2>
+        <p style="text-align:center; color:#6b7280; margin:0 0 28px;">Publicaciones, stock, ventas y facturas, en la misma base.</p>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:20px;">
+            <div style="border:1px solid #e6e8ee; border-radius:12px; padding:22px;">
+                <h3 style="margin:0 0 14px; font-size:15px; font-weight:700; border-bottom:2px solid #e7f6ee; padding-bottom:8px;">Publicaciones</h3>
+                <ul style="list-style:none; padding:0; margin:0; color:#3d4654; font-size:14px; line-height:1.9;">
+                    <li>Importar y administrar publicaciones</li>
+                    <li>Publicar productos de Odoo</li>
+                    <li>Sincronizar precios, manual o automático</li>
+                    <li>Vincular por SKU</li>
+                    <li>Variantes y atributos</li>
+                </ul>
+            </div>
+            <div style="border:1px solid #e6e8ee; border-radius:12px; padding:22px;">
+                <h3 style="margin:0 0 14px; font-size:15px; font-weight:700; border-bottom:2px solid #e7f6ee; padding-bottom:8px;">Stock</h3>
+                <ul style="list-style:none; padding:0; margin:0; color:#3d4654; font-size:14px; line-height:1.9;">
+                    <li>Sincronización en cada movimiento de Odoo</li>
+                    <li>Pausa automática al llegar al mínimo</li>
+                    <li>Reactivación cuando vuelve el stock</li>
+                    <li>Mercado Libre Full</li>
+                    <li>Reglas por publicación</li>
+                </ul>
+            </div>
+            <div style="border:1px solid #e6e8ee; border-radius:12px; padding:22px;">
+                <h3 style="margin:0 0 14px; font-size:15px; font-weight:700; border-bottom:2px solid #e7f6ee; padding-bottom:8px;">Ventas</h3>
+                <ul style="list-style:none; padding:0; margin:0; color:#3d4654; font-size:14px; line-height:1.9;">
+                    <li>Importación en tiempo real por webhook</li>
+                    <li>Packs de varios ítems</li>
+                    <li>Clientes creados automáticamente</li>
+                    <li>Detección B2B con CUIT</li>
+                    <li>Cancelaciones y notas de crédito</li>
+                </ul>
+            </div>
+            <div style="border:1px solid #e6e8ee; border-radius:12px; padding:22px;">
+                <h3 style="margin:0 0 14px; font-size:15px; font-weight:700; border-bottom:2px solid #e7f6ee; padding-bottom:8px;">Facturación</h3>
+                <ul style="list-style:none; padding:0; margin:0; color:#3d4654; font-size:14px; line-height:1.9;">
+                    <li>Factura automática por venta</li>
+                    <li>Tipo A o B según el comprador</li>
+                    <li>Comisiones como asiento aparte</li>
+                    <li>Producto de respaldo si el SKU no matchea</li>
+                    <li>Varias cuentas de Mercado Libre</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="oe_row" style="background:#f4fbf7; border-radius:16px; padding:32px 28px; margin-bottom:28px; text-align:center;">
+        <h2 style="font-size:22px; font-weight:800; margin:0 0 12px;">Datos y privacidad</h2>
+        <p style="max-width:680px; margin:0 auto; color:#3d4654; font-size:15px;">
+            Una vez autorizado, el conector intercambia solo lo necesario para operar: publicaciones, variantes, stock, pedidos y los datos de comprador y envío que envía Mercado Libre.
+            Las credenciales y los tokens viven en tu base de Odoo.
+            Sin clave de activación, sin servidor de terceros y sin lock-in.
         </p>
     </div>
-</section>
 
-<section class="oe_container">
-    <div class="oe_row oe_spaced" style="padding: 40px 0 24px;">
-        <h3 class="oe_slogan" style="font-size:1.6em; font-weight:700; text-align:center; margin-bottom:40px;">
-            Why are Mercado Libre &amp; Odoo<br/>better together — if they are connected?
-        </h3>
-
-        <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:24px;">
-
-            <div style="background:#f8f9ff; border-radius:12px; padding:28px 24px;">
-                <div style="font-size:2em; margin-bottom:12px;">🏪</div>
-                <h4 style="font-weight:700; margin:0 0 8px;">Your store, your rules</h4>
-                <p style="color:#666; font-size:0.93em; line-height:1.6; margin:0;">Manage listings, prices and stock for Mercado Libre directly from Odoo. No more switching between platforms.</p>
-            </div>
-
-            <div style="background:#f8f9ff; border-radius:12px; padding:28px 24px;">
-                <div style="font-size:2em; margin-bottom:12px;">🧾</div>
-                <h4 style="font-weight:700; margin:0 0 8px;">Invoicing on autopilot</h4>
-                <p style="color:#666; font-size:0.93em; line-height:1.6; margin:0;">Every Mercado Libre sale generates an Odoo invoice automatically — including correct invoice type (A/B) based on the buyer's tax status.</p>
-            </div>
-
-            <div style="background:#f8f9ff; border-radius:12px; padding:28px 24px;">
-                <div style="font-size:2em; margin-bottom:12px;">📦</div>
-                <h4 style="font-weight:700; margin:0 0 8px;">Stock always accurate</h4>
-                <p style="color:#666; font-size:0.93em; line-height:1.6; margin:0;">Stock updates in Odoo instantly reflect on Mercado Libre listings. Automatic pause/resume rules keep you protected from overselling.</p>
-            </div>
-
-        </div>
+    <div class="oe_row" style="display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-bottom:28px;">
+        <span style="border:1px solid #e6e8ee; border-radius:999px; padding:6px 14px; font-size:13px; color:#3d4654;">Odoo 19</span>
+        <span style="border:1px solid #e6e8ee; border-radius:999px; padding:6px 14px; font-size:13px; color:#3d4654;">Ventas</span>
+        <span style="border:1px solid #e6e8ee; border-radius:999px; padding:6px 14px; font-size:13px; color:#3d4654;">Inventario</span>
+        <span style="border:1px solid #e6e8ee; border-radius:999px; padding:6px 14px; font-size:13px; color:#3d4654;">Contabilidad</span>
+        <span style="border:1px solid #e6e8ee; border-radius:999px; padding:6px 14px; font-size:13px; color:#3d4654;">Facturación</span>
     </div>
-</section>
 
-<section class="oe_container oe_dark">
-    <div class="oe_row oe_spaced" style="padding: 40px 0;">
-        <h3 class="oe_slogan" style="font-size:1.5em; font-weight:700; text-align:center; margin-bottom:36px;">How it works</h3>
-
-        <div style="display:flex; gap:0; max-width:700px; margin:0 auto; flex-direction:column;">
-
-            <div style="display:flex; align-items:flex-start; gap:20px; margin-bottom:24px;">
-                <div style="min-width:36px; height:36px; background:#3b5bdb; color:#fff; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:1em;">1</div>
-                <div>
-                    <strong>Install and open Mercado Libre Configuration in Odoo</strong>
-                    <p style="color:#666; margin:4px 0 0; font-size:0.92em;">A dedicated Mercado Libre menu appears in the Sales app.</p>
-                </div>
-            </div>
-
-            <div style="display:flex; align-items:flex-start; gap:20px; margin-bottom:24px;">
-                <div style="min-width:36px; height:36px; background:#3b5bdb; color:#fff; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:1em;">2</div>
-                <div>
-                    <strong>Enter your App ID and Client Secret</strong>
-                    <p style="color:#666; margin:4px 0 0; font-size:0.92em;">From your developer app at developers.mercadolibre.com.</p>
-                </div>
-            </div>
-
-            <div style="display:flex; align-items:flex-start; gap:20px; margin-bottom:24px;">
-                <div style="min-width:36px; height:36px; background:#3b5bdb; color:#fff; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:1em;">3</div>
-                <div>
-                    <strong>Authorize with one click via OAuth 2.0</strong>
-                    <p style="color:#666; margin:4px 0 0; font-size:0.92em;">Tokens are stored in your database and refreshed automatically.</p>
-                </div>
-            </div>
-
-            <div style="display:flex; align-items:flex-start; gap:20px; margin-bottom:24px;">
-                <div style="min-width:36px; height:36px; background:#3b5bdb; color:#fff; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:1em;">4</div>
-                <div>
-                    <strong>Import your listings and link them to Odoo products by SKU</strong>
-                    <p style="color:#666; margin:4px 0 0; font-size:0.92em;">Auto-matching by SKU or manual assignment. Full variant support.</p>
-                </div>
-            </div>
-
-            <div style="display:flex; align-items:flex-start; gap:20px;">
-                <div style="min-width:36px; height:36px; background:#3b5bdb; color:#fff; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:1em;">5</div>
-                <div>
-                    <strong>Enable webhooks — orders, cancellations and invoices are handled automatically</strong>
-                    <p style="color:#666; margin:4px 0 0; font-size:0.92em;">Every sale triggers a sales order, delivery and invoice in Odoo with zero manual work.</p>
-                </div>
-            </div>
-
-        </div>
+    <div class="oe_row" style="background:#00a650; color:#fff; border-radius:16px; padding:36px 28px; text-align:center; margin-bottom:20px;">
+        <h2 style="font-size:24px; font-weight:800; margin:0 0 8px; color:#fff;">Soporte</h2>
+        <p style="margin:0 0 16px; color:#e8fff2;">Desarrollado y mantenido por Galarreta.</p>
+        <a href="mailto:lautaro@galarreta.co" style="display:inline-block; background:#fff; color:#06753c; font-weight:700; text-decoration:none; border-radius:999px; padding:10px 22px;">lautaro@galarreta.co</a>
     </div>
-</section>
 
-<section class="oe_container">
-    <div class="oe_row oe_spaced" style="padding: 40px 0;">
-        <h3 class="oe_slogan" style="font-size:1.5em; font-weight:700; text-align:center; margin-bottom:12px;">What gets synchronized</h3>
-        <p style="text-align:center; color:#888; margin-bottom:32px;">The most complete Mercado Libre integration available for Odoo.</p>
-
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:32px;">
-
-            <div>
-                <h4 style="font-weight:700; border-bottom:2px solid #e9ecef; padding-bottom:8px; margin-bottom:16px;">📦 Listings &amp; Products</h4>
-                <ul style="list-style:none; padding:0; margin:0; color:#555; line-height:2;">
-                    <li>✓ Import and manage Mercado Libre listings</li>
-                    <li>✓ Publish Odoo products to Mercado Libre</li>
-                    <li>✓ Sync prices (manual or automatic)</li>
-                    <li>✓ Auto-link listings to Odoo products by SKU</li>
-                    <li>✓ Full variant and attribute support</li>
-                </ul>
-            </div>
-
-            <div>
-                <h4 style="font-weight:700; border-bottom:2px solid #e9ecef; padding-bottom:8px; margin-bottom:16px;">📊 Stock</h4>
-                <ul style="list-style:none; padding:0; margin:0; color:#555; line-height:2;">
-                    <li>✓ Automatic stock sync on every Odoo move</li>
-                    <li>✓ Auto-pause listings at minimum stock</li>
-                    <li>✓ Auto-reactivate when stock is back</li>
-                    <li>✓ Mercado Libre Full (fulfillment) support</li>
-                    <li>✓ Configurable rules per listing</li>
-                </ul>
-            </div>
-
-            <div>
-                <h4 style="font-weight:700; border-bottom:2px solid #e9ecef; padding-bottom:8px; margin-bottom:16px;">🛒 Orders &amp; Sales</h4>
-                <ul style="list-style:none; padding:0; margin:0; color:#555; line-height:2;">
-                    <li>✓ Real-time order import via webhooks</li>
-                    <li>✓ Pack (multi-item cart) support</li>
-                    <li>✓ Customer records created automatically</li>
-                    <li>✓ B2B detection with CUIT lookup</li>
-                    <li>✓ Cancellation handling with credit notes</li>
-                </ul>
-            </div>
-
-            <div>
-                <h4 style="font-weight:700; border-bottom:2px solid #e9ecef; padding-bottom:8px; margin-bottom:16px;">🧾 Invoicing</h4>
-                <ul style="list-style:none; padding:0; margin:0; color:#555; line-height:2;">
-                    <li>✓ Automatic invoice generation per sale</li>
-                    <li>✓ Invoice type A/B based on buyer tax status</li>
-                    <li>✓ Selling fees recorded as separate accounting entry</li>
-                    <li>✓ Fallback product for unmatched SKUs</li>
-                    <li>✓ Multiple Mercado Libre accounts per Odoo instance</li>
-                </ul>
-            </div>
-
-        </div>
+    <div class="oe_row" style="background:#16122b; color:#c5c8d4; border-radius:12px; padding:22px 24px; text-align:center; font-size:13px;">
+        <strong style="color:#fff;">Galarreta</strong>
+        <span style="margin:0 8px;">·</span>
+        <a href="https://galarreta.co" style="color:#7dcea0; text-decoration:none;">galarreta.co</a>
+        <span style="margin:0 8px;">·</span>
+        <a href="mailto:lautaro@galarreta.co" style="color:#7dcea0; text-decoration:none;">lautaro@galarreta.co</a>
     </div>
-</section>
 
-<section class="oe_container oe_dark">
-    <div class="oe_row oe_spaced" style="padding: 40px 0;">
-        <h3 class="oe_slogan" style="font-size:1.5em; font-weight:700; text-align:center; margin-bottom:32px;">Data &amp; privacy</h3>
-        <p style="max-width:680px; margin:0 auto; text-align:center; color:#555; line-height:1.8;">
-            Once authorized, the connector exchanges only the data required for marketplace operations —
-            listings, variants, stock levels, orders, and the buyer and shipping details provided by Mercado Libre.
-            All credentials and tokens are stored exclusively in your own Odoo database.
-            <strong>No activation key. No third-party server. No lock-in.</strong>
-        </p>
-    </div>
-</section>
-
-<section class="oe_container">
-    <div class="oe_row oe_spaced" style="padding: 40px 0; text-align:center;">
-        <h3 class="oe_slogan" style="font-size:1.5em; font-weight:700; margin-bottom:16px;">Support</h3>
-        <p style="color:#555; line-height:1.8;">
-            Developed and maintained by <strong>Galarreta</strong><br/>
-            For questions, issues or feature requests:<br/>
-            <a href="mailto:lautaro@galarreta.co" style="color:#3b5bdb; font-weight:600;">lautaro@galarreta.co</a>
-        </p>
-    </div>
 </section>
