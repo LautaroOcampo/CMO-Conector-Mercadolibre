@@ -1,0 +1,26 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_ml_account_user,ml.account user,model_ml_account,group_ml_user,1,0,0,0
+access_ml_account_admin,ml.account admin,model_ml_account,group_ml_admin,1,1,1,1
+access_ml_publication_user,ml.publication user,model_ml_publication,group_ml_user,1,1,1,0
+access_ml_publication_admin,ml.publication admin,model_ml_publication,group_ml_admin,1,1,1,1
+access_ml_sale_user,ml.sale user,model_ml_sale,group_ml_user,1,0,0,0
+access_ml_sale_admin,ml.sale admin,model_ml_sale,group_ml_admin,1,1,1,1
+access_ml_sync_log_user,ml.sync.log user,model_ml_sync_log,group_ml_user,1,0,0,0
+access_ml_sync_log_admin,ml.sync.log admin,model_ml_sync_log,group_ml_admin,1,0,0,1
+access_ml_pub_image_user,ml.pub.image user,model_ml_publication_image,group_ml_user,1,1,1,0
+access_ml_pub_image_admin,ml.pub.image admin,model_ml_publication_image,group_ml_admin,1,1,1,1
+access_ml_pub_attr_user,ml.pub.attr user,model_ml_publication_attribute,group_ml_user,1,1,1,0
+access_ml_pub_attr_admin,ml.pub.attr admin,model_ml_publication_attribute,group_ml_admin,1,1,1,1
+access_ml_pub_variant_user,ml.pub.variant user,model_ml_publication_variant,group_ml_user,1,1,1,0
+access_ml_pub_variant_admin,ml.pub.variant admin,model_ml_publication_variant,group_ml_admin,1,1,1,1
+access_ml_pub_variant_attr_user,ml.pub.variant.attr user,model_ml_publication_variant_attribute,group_ml_user,1,1,1,0
+access_ml_pub_variant_attr_admin,ml.pub.variant.attr admin,model_ml_publication_variant_attribute,group_ml_admin,1,1,1,1
+access_ml_webhook_admin,ml.webhook.notification admin,model_ml_webhook_notification,group_ml_admin,1,1,1,1
+access_ml_import_wizard_admin,ml.import.orders.wizard admin,model_ml_import_orders_wizard,group_ml_admin,1,1,1,1
+access_ml_match_wizard_admin,ml.match.publications.wizard admin,model_ml_match_publications_wizard,group_ml_admin,1,1,1,1
+access_ml_variant_warning_wizard_admin,ml.variant.warning.wizard admin,model_ml_variant_warning_wizard,group_ml_admin,1,1,1,1
+access_ml_publication_values_wizard_admin,ml.publication.values.wizard admin,model_ml_publication_values_wizard,group_ml_admin,1,1,1,1
+access_ml_cleanup_unpaid_wizard_admin,ml.cleanup.unpaid.sales.wizard admin,model_ml_cleanup_unpaid_sales_wizard,group_ml_admin,1,1,1,1
+access_ml_test_user_admin,ml.test.user admin,model_ml_test_user,group_ml_admin,1,1,1,1
+access_ml_sale_line_user,ml.sale.line user,model_ml_sale_line,group_ml_user,1,0,0,0
+access_ml_sale_line_admin,ml.sale.line admin,model_ml_sale_line,group_ml_admin,1,1,1,1

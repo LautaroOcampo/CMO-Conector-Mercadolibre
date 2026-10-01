@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- PDF estándar: nombre ML limpio cuando hay fallback; descripción interna sin cambios. -->
+    <template id="report_invoice_document_ml_line_name" inherit_id="account.report_invoice_document">
+        <xpath expr="//td[@name='account_invoice_line_name']/span" position="replace">
+            <span t-if="line.get_channel_invoice_report_line_name()"
+                  t-out="line.get_channel_invoice_report_line_name()"
+                  t-options="{'widget': 'text'}"
+                  dir="auto"/>
+        </xpath>
+    </template>
+</odoo>

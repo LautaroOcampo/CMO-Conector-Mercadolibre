@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- No cargar este archivo en el manifiesto.
+
+         Las claves mercadolibre_connector.oauth_hub_url y
+         mercadolibre_connector.oauth_shared_secret se aseguran en
+         post_init_hook (set_param solo si la key no existe).
+
+         Crear ir.config_parameter por XML falla tras el rename a
+         *_galarreta: el XML ID es otro módulo, pero la key es la misma
+         (unique) y puede existir por el hub o una instalación anterior.
+    -->
+</odoo>

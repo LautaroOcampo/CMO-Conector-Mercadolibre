@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_ml_cleanup_unpaid_sales_wizard_form" model="ir.ui.view">
+        <field name="name">ml.cleanup.unpaid.sales.wizard.form</field>
+        <field name="model">ml.cleanup.unpaid.sales.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Limpiar ventas ML no pagadas">
+                <sheet>
+                    <div class="alert alert-warning" role="alert">
+                        <p>
+                            Se buscarán ventas Mercado Libre con estado distinto de
+                            <strong>Pagada</strong> y <strong>Cancelada</strong>
+                            (p. ej. Pendiente / Confirmada importadas antes de tiempo).
+                        </p>
+                        <p>
+                            Para cada una: se <strong>cancela</strong> el pedido Odoo
+                            vinculado (si existe y se puede) y se <strong>archiva</strong>
+                            el registro de venta ML.
+                        </p>
+                        <p>
+                            Las ventas <strong>Pagadas</strong> no se tocan.
+                            Si un pedido tiene remito en estado Hecho, se omite.
+                        </p>
+                    </div>
+                    <group>
+                        <field name="sale_count"/>
+                        <field name="with_odoo_order_count"/>
+                    </group>
+                    <group string="Detalle">
+                        <field name="summary" nolabel="1" readonly="1" widget="text"/>
+                    </group>
+                    <field name="sale_ids" invisible="1"/>
+                </sheet>
+                <footer>
+                    <button name="action_confirm_cleanup"
+                            string="Archivar y cancelar pedidos"
+                            type="object"
+                            class="btn-primary"
+                            confirm="¿Confirmás archivar estas ventas ML no pagadas y cancelar sus pedidos Odoo?"/>
+                    <button string="Cancelar" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_move_form_inherit_ml" model="ir.ui.view">
+        <field name="name">account.move.form.inherit.ml</field>
+        <field name="model">account.move</field>
+        <field name="inherit_id" ref="account.view_move_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="Mercado Libre" name="ml_invoice_payload"
+                      invisible="move_type not in ('out_invoice', 'out_refund') or not ml_order_payload">
+                    <group>
+                        <field name="ml_commission_amount" readonly="1"/>
+                    </group>
+                    <field name="ml_order_payload" nolabel="1" readonly="1" widget="text"/>
+                </page>
+            </xpath>
+        </field>
+    </record>
+</odoo>

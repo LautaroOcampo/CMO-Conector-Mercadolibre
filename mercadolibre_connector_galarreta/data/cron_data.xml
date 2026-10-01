@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Respaldo: refresh lazy en cada llamada API; este cron solo renueva tokens por vencer -->
+        <record id="ir_cron_refresh_ml_tokens" model="ir.cron">
+            <field name="name">Refrescar Tokens ML (respaldo)</field>
+            <field name="model_id" ref="model_ml_account"/>
+            <field name="state">code</field>
+            <field name="code">model.cron_refresh_expiring_tokens()</field>
+            <field name="interval_number">3</field>
+            <field name="interval_type">hours</field>
+            <field name="active" eval="True"/>
+        </record>
+        <!-- Polling de ventas ML: complemento al webhook (WEBHOOK + POLLING + IDEMPOTENCIA) -->
+        <record id="ir_cron_poll_ml_orders" model="ir.cron">
+            <field name="name">Sincronizar Órdenes de Venta (pooling)</field>
+            <field name="model_id" ref="model_ml_account"/>
+            <field name="state">code</field>
+            <field name="code">model.cron_poll_recent_orders()</field>
+            <field name="interval_number">10</field>
+            <field name="interval_type">minutes</field>
+            <field name="active" eval="True"/>
+        </record>
+        <!-- Auditoría ml.sync.log: borrar OK antiguos; conservar errores -->
+        <record id="ir_cron_purge_ml_sync_log_ok" model="ir.cron">
+            <field name="name">Limpiar logs OK de sync ML (&gt;30 días)</field>
+            <field name="model_id" ref="model_ml_sync_log"/>
+            <field name="state">code</field>
+            <field name="code">model.cron_purge_old_ok_logs()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">months</field>
+            <field name="active" eval="True"/>
+        </record>
+        <record id="ir_cron_import_publications_ml" model="ir.cron">
+            <field name="name">Importar Publicaciones Mercado Libre (lotes)</field>
+            <field name="model_id" ref="model_ml_account"/>
+            <field name="state">code</field>
+            <field name="code">model.cron_import_publications_batch()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">minutes</field>
+            <field name="active" eval="True"/>
+        </record>
+        <record id="ir_cron_scan_new_ml_publications" model="ir.cron">
+            <field name="name">Mercado Libre: detectar publicaciones nuevas (scan diario)</field>
+            <field name="model_id" ref="model_ml_account"/>
+            <field name="state">code</field>
+            <field name="code">model.cron_scan_new_ml_publications()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="active" eval="True"/>
+        </record>
+        <!-- Respaldo: notificaciones webhook pending sin ml.sale (cola caída / timeout) -->
+        <record id="ir_cron_process_pending_ml_webhooks" model="ir.cron">
+            <field name="name">Procesar webhooks ML pendientes</field>
+            <field name="model_id" ref="model_ml_webhook_notification"/>
+            <field name="state">code</field>
+            <field name="code">model.cron_process_pending_webhook_notifications()</field>
+            <field name="interval_number">2</field>
+            <field name="interval_type">minutes</field>
+            <field name="active" eval="True"/>
+        </record>
+        <!-- NC faltantes: venta cancelada con factura AFIP publicada después -->
+        <record id="ir_cron_reconcile_cancelled_ml_invoices" model="ir.cron">
+            <field name="name">Reconciliar NC de ventas ML canceladas</field>
+            <field name="model_id" ref="model_ml_sale"/>
+            <field name="state">code</field>
+            <field name="code">model.cron_reconcile_cancelled_ml_invoices()</field>
+            <field name="interval_number">15</field>
+            <field name="interval_type">minutes</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
+</odoo>
