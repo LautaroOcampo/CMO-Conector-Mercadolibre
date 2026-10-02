@@ -64,6 +64,8 @@ Features:
     'images': [
         'static/description/cover_screenshot.png',
     ],
+    'price': 250.00,
+    'currency': 'USD',
 
     'installable': True,
     'application': True,
