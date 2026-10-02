@@ -61,6 +61,10 @@ Features:
         'demo/demo.xml',
     ],
 
+    'images': [
+        'static/description/cover_screenshot.png',
+    ],
+
     'installable': True,
     'application': True,
     'license': 'LGPL-3',
