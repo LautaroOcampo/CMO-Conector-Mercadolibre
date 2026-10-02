@@ -28,7 +28,7 @@ Features:
 
     'author': "Galarreta",
     'website': "https://galarreta.co",
-    'support': "lautaro@galarreta.co",
+    'support': "alvaro@galarreta.co",
 
     'category': 'Sales',
     'version': '19.0.1.0.68',
