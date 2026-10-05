@@ -1,14 +1,15 @@
 # -*- coding: utf-8 -*-
 {
-    'name': "Conector Mercado Libre",
+    'name': "Mercado Libre Connector",
 
-    'summary': "Sync listings, sales and stock between Odoo and Mercado Libre",
+    'summary': "Connect Odoo with Mercado Libre — sync listings, stock, orders and invoicing in real time",
 
     'description': """
-Mercado Libre Connector
-=======================
+Mercado Libre Connector for Odoo
+=================================
 
-Connect Odoo with the Mercado Libre API.
+Connect your Odoo instance with Mercado Libre, the leading marketplace
+in Latin America.
 
 Requires an active Mercado Libre developer application and seller account
 (external service). Authorization uses OAuth 2.0; order, product and stock
@@ -18,12 +19,17 @@ Features:
 
 * Manage Mercado Libre accounts and OAuth 2.0 authorization
 * Import and publish products on Mercado Libre
-* Sync prices and stock (manual or automatic)
-* Receive sales in real time via webhooks and import orders
-* Automatic pause/activation rules based on stock
+* Sync prices and stock — manual or automatic
+* Receive orders in real time via webhooks
+* Automatic pause and activation rules based on stock
 * Automatic invoicing of Mercado Libre sales
 * Match listings with Odoo products by SKU
 * Register Mercado Libre selling fees as a separate accounting entry
+
+Keywords: Mercado Libre, MercadoLibre, MELI, marketplace, e-commerce,
+ecommerce, Latin America, Argentina, Brazil, Mexico, Colombia, Chile,
+inventory sync, order automation, webhook, stock management,
+product listings, online store, invoicing
     """,
 
     'author': "Galarreta",
