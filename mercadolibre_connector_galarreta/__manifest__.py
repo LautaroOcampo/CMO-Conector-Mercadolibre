@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 {
-    'name': "Mercado Libre Connector",
+    'name': "Conector Mercadolibre",
 
     'summary': "Connect Odoo with Mercado Libre — sync listings, stock, orders and invoicing in real time",
 
