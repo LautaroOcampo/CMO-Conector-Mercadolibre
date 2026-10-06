@@ -43,13 +43,6 @@
                             class="btn-warning"
                             invisible="not import_publications_active"/>
                     
-                    <button name="action_view_stock_sync_publications"
-                            string="👁️ Ver Publicaciones que Sincronizarían Stock"
-                            type="object"
-                            icon="fa-eye"
-                            class="btn-secondary"
-                            help="Vista previa: lista las publicaciones que recibirían stock desde Odoo (publicadas en ML y con producto relacionado). No envía nada a Mercado Libre."/>
-
                     <button name="action_update_all_publications_stock"
                             string="📦 Actualizar Stock de Todas las Publicaciones"
                             type="object"
@@ -68,18 +61,6 @@
 
                 <sheet>
                     <div class="oe_button_box" name="button_box">
-                        <button name="action_create_test_user"
-                                type="object"
-                                class="oe_stat_button"
-                                icon="fa-user-plus"
-                                string="Crear Usuario Test"/>
-                        <button name="action_view_test_users"
-                                type="object"
-                                class="oe_stat_button"
-                                icon="fa-users"
-                                context="{'default_ml_account_id': id}">
-                            <field name="test_users_count" widget="statinfo" string="Usuarios Test"/>
-                        </button>
                         <button name="action_view_sync_log_errors"
                                 type="object"
                                 class="oe_stat_button"

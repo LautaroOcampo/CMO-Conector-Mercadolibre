@@ -1916,102 +1916,6 @@ class MlAccount(models.Model):
             'target': 'new',
         }
 
-    def action_create_test_user(self):
-        """Crea un usuario test de MercadoLibre (sandbox de la app)."""
-        self.ensure_one()
-        if not self.access_token:
-            raise UserError(_(
-                'La cuenta debe estar autorizada primero. Use "Autorizar cuenta" '
-                'antes de crear usuarios test.'
-            ))
-        self._ensure_valid_token()
-        _logger.info("INICIO: Creación de usuario test de MercadoLibre")
-        try:
-            url = "https://api.mercadolibre.com/users/test_user"
-            headers = {
-                "Authorization": f"Bearer {self.access_token}",
-                "Content-Type": "application/json",
-            }
-            payload = {"site_id": self._mercadolibre_site_id()}
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
-            if not response.ok:
-                error_text = response.text
-                try:
-                    error_json = response.json()
-                    error_message = error_json.get('message', error_text)
-                    error_cause = error_json.get('cause', [])
-                    if error_cause:
-                        cause_messages = [
-                            c.get('message', '') for c in error_cause if isinstance(c, dict)
-                        ]
-                        if cause_messages:
-                            error_message += "\n\nDetalles:\n" + "\n".join(
-                                f"• {msg}" for msg in cause_messages
-                            )
-                except Exception:
-                    error_message = error_text
-                raise UserError(_("Error al crear usuario test:\n\n%s") % error_message)
-            test_user_data = response.json()
-            test_user_record = self.env['ml.test.user'].create({
-                'ml_account_id': self.id,
-                'user_id': test_user_data.get('id', ''),
-                'nickname': test_user_data.get('nickname', ''),
-                'password': test_user_data.get('password', ''),
-                'site_id': test_user_data.get('site_id', ''),
-                'email': test_user_data.get('email', ''),
-                'first_name': test_user_data.get('first_name', ''),
-                'last_name': test_user_data.get('last_name', ''),
-                'full_data': json.dumps(test_user_data, indent=2, ensure_ascii=False),
-            })
-            _logger.info(
-                "Usuario test ML guardado en BD (ID: %s, nickname: %s)",
-                test_user_record.id,
-                test_user_data.get('nickname'),
-            )
-            message = _(
-                "Usuario test creado exitosamente\n\n"
-                "ID: %s\nNickname: %s\nPassword: %s\nEmail: %s"
-            ) % (
-                test_user_data.get('id', 'N/A'),
-                test_user_data.get('nickname', 'N/A'),
-                test_user_data.get('password', 'N/A'),
-                test_user_data.get('email', 'N/A'),
-            )
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {
-                    'title': _('Usuario Test Creado'),
-                    'message': message,
-                    'type': 'success',
-                    'sticky': True,
-                },
-            }
-        except UserError:
-            raise
-        except requests.exceptions.RequestException as e:
-            _logger.error("Error de conexión creando usuario test: %s", e, exc_info=True)
-            raise UserError(_("Error de conexión con MercadoLibre:\n\n%s") % e)
-        except Exception as e:
-            _logger.error("Error inesperado creando usuario test: %s", e, exc_info=True)
-            raise UserError(_("Error inesperado al crear usuario test:\n\n%s") % e)
-
-    def action_view_test_users(self):
-        """Muestra usuarios test guardados para esta cuenta."""
-        self.ensure_one()
-        return {
-            'name': _('Usuarios Test Guardados'),
-            'type': 'ir.actions.act_window',
-            'res_model': 'ml.test.user',
-            'view_mode': 'list,form',
-            'domain': [('ml_account_id', '=', self.id)],
-            'context': {
-                'default_ml_account_id': self.id,
-                'search_default_ml_account_id': self.id,
-            },
-            'target': 'current',
-        }
-
     def action_test_connection(self):
         """Prueba la conexión con Mercado Libre (GET /users/me)."""
         self.ensure_one()
@@ -2296,26 +2200,6 @@ class MlAccount(models.Model):
             ('product_tmpl_id', '!=', False),
         ])
 
-    def action_view_stock_sync_publications(self):
-        """
-        Vista previa (solo lectura) de las publicaciones que recibirían stock.
-
-        Usa exactamente el mismo criterio que el sync automático y el botón
-        «Actualizar stock»: publicada en ML y con producto relacionado.
-        No envía nada a Mercado Libre.
-        """
-        self.ensure_one()
-        publications = self._ml_get_stock_sync_publications()
-        name = _('Sincronizarían stock: %d publicaciones') % len(publications)
-        return {
-            'type': 'ir.actions.act_window',
-            'name': name,
-            'res_model': 'ml.publication',
-            'view_mode': 'list,form',
-            'domain': [('id', 'in', publications.ids)],
-            'context': {'create': False},
-        }
-
     def action_open_import_orders_wizard(self):
         """Abre el wizard para importar órdenes con opciones"""
         self.ensure_one()
@@ -2344,7 +2228,7 @@ class MlAccount(models.Model):
             raise UserError(_('La cuenta de MercadoLibre no tiene token de acceso configurado. Por favor, autorice la cuenta primero.'))
         
         # Publicadas en ML + con producto relacionado.
-        # Mismo criterio que la vista previa (action_view_stock_sync_publications).
+        # Publicadas en ML y con producto relacionado.
         publications = self._ml_get_stock_sync_publications()
 
         if not publications:
